@@ -1,23 +1,39 @@
-# scripts sql DDL y DML
+# Scripts SQL DDL y DML
+
+**Integrantes**
 
 - Erick Santiago Buitrago Peña - 20221020072
 - Dairo Alejandro Nestiel Muñoz - 20231020025
 
-## Contexto de Despliegue en Azure
+---
 
-Las bases de datos están cada una desplegada en un recurso "Azure Database for PostgreSQL flexible server" de Azure, ubicadas en un mismo grupo de recursos y configuradas con acceso público temporal para la ejecución de los scripts desde las máquinas locales y demostraciones. Sin embargo, posteriormente estas bases de datos únicamente se podrán accesar desde las APIs correspondientes a cada microservicio de manera interna y segura.
+## Despliegue en Azure
+
+Cada una de las bases de datos está desplegada en un recurso **Azure Database for PostgreSQL flexible server** de Azure, y todos los recursos pertenecen a un mismo grupo de recursos. Se habilitó acceso público de forma **temporal** únicamente para ejecutar los scripts desde las máquinas locales y realizar las demostraciones. Una vez finalizada esta etapa, cada base de datos solo podrá ser accedida desde la API del microservicio correspondiente.
+
+| Microservicio | Servidor | Base de datos |
+|---|---|---|
+| Catálogo | `catalogo-db-server` | `catalogo_db` |
+| Organización | `organizacion-db-server` | `organizacion_db` |
+| Compras | `compras-db-server` | `compras_db` |
+| Inventarios | `inventarios-db-server` | `inventarios_db` |
+| Ventas | `ventas-db-server` | `ventas_db` |
+| Identidad | `identidad-db-server` | `identidad_db` |
+
+A continuación se documenta la creación de la base de datos de cada microservicio: una breve descripción, la creación de tablas (DDL), la inserción de datos de prueba (DML) y las vistas y consultas de verificación.
 
 ---
 
-## 1. Catálogo
+## 1. Catálogo (`catalogo`)
 
-Gestiona la metadata maestra del producto: qué vende la empresa, cómo se clasifica y en qué unidad se mide.
+> Gestiona la metadata maestra del producto: qué vende la empresa, cómo se clasifica y en qué unidad se mide.
 
-Se definen las estructuras DDL para organizar la información de manera estructurada y normalizada.
-Estas tablas permiten categorizar los productos y almacenar sus características principales con restricciones clave.
-Se establecen llaves primarias, foráneas y restricciones de unicidad para mantener la integridad de los datos.
+### 1.1 Creación de tablas (DDL)
+
+Se crea el esquema `catalogo` con dos tablas: `categorias` y `productos`. Cada tabla usa una columna de identidad como llave primaria, y `productos` referencia a `categorias` mediante una llave foránea. Se aplican restricciones `UNIQUE` (nombre de categoría y SKU) y `CHECK` (estados válidos y precio de lista no negativo) para proteger la integridad de los datos.
 
 ```sql
+--- creacion de tablas catalogo ---
 CREATE SCHEMA IF NOT EXISTS catalogo;
 
 CREATE TABLE IF NOT EXISTS catalogo.categorias (
@@ -38,11 +54,14 @@ CREATE TABLE IF NOT EXISTS catalogo.productos (
 );
 ```
 
-Se realiza la inserción masiva de datos iniciales para categorías y productos del inventario general.
-Se utiliza la instrucción TRUNCATE con RESTART IDENTITY y sobreescritura de valores de sistema para control de IDs.
-Estos registros inicializan el catálogo corporativo con diferentes líneas de productos y estados activos o inactivos.
+### 1.2 Inserción de datos (DML)
+
+Se vacían las tablas con `TRUNCATE ... RESTART IDENTITY` y se insertan 9 categorías y 85 productos, fijando los id con `OVERRIDING SYSTEM VALUE`. Los productos 1 a 80 son artículos de consumo masivo (algunos inactivos) y los productos 101 a 105 son los que ya usan compras e inventarios. Al final, `setval` sincroniza las secuencias de identidad con el mayor id insertado.
 
 ```sql
+--- generación de datos catalogo ---
+
+
 TRUNCATE catalogo.productos, catalogo.categorias RESTART IDENTITY;
 
 INSERT INTO catalogo.categorias (id_categoria, nombre, descripcion, estado)
@@ -156,51 +175,187 @@ SELECT setval(pg_get_serial_sequence('catalogo.categorias', 'id_categoria'), (SE
 SELECT setval(pg_get_serial_sequence('catalogo.productos',  'id_producto'),  (SELECT max(id_producto)  FROM catalogo.productos));
 ```
 
-Se ejecutan consultas de conteo, agrupación por categoría y filtrado de productos específicos.
-Se muestran estadísticas de conteos totales, productos por categoría y productos inactivos.
-Se incluyen pruebas de restricciones y validación de actualizaciones lógicas del catálogo.
+### 1.3 Vistas y consultas
+
+**Conteos.** Muestra cuántas filas hay en `categorias` y `productos`, y cuántos productos están activos e inactivos.
 
 ```sql
+--- vistas catalogo ----
+
+
+
 -- Conteos
 SELECT 'categorias' AS tabla, count(*) AS filas FROM catalogo.categorias
 UNION ALL SELECT 'productos', count(*) FROM catalogo.productos
 UNION ALL SELECT 'productos activos', count(*) FROM catalogo.productos WHERE estado = 'activo'
 UNION ALL SELECT 'productos inactivos', count(*) FROM catalogo.productos WHERE estado = 'inactivo';
+```
 
+**Productos por categoría.** Lista cada categoría con la cantidad de productos que contiene, incluidas las que aún no tienen ninguno.
+
+```sql
 -- Productos por categoría.
+
 SELECT c.id_categoria, c.nombre, count(p.id_producto) AS productos
 FROM catalogo.categorias c LEFT JOIN catalogo.productos p ON p.id_categoria = c.id_categoria
 GROUP BY c.id_categoria, c.nombre ORDER BY c.id_categoria;
+```
 
+**Productos usados por compras e inventarios.** Muestra id, SKU, nombre y precio de lista de los productos 101 a 105.
+
+```sql
 -- Productos que ya usan compras e inventarios 
 SELECT id_producto, sku, nombre, precio_lista FROM catalogo.productos
 WHERE id_producto IN (101, 102, 103, 104, 105) ORDER BY id_producto;
+```
 
+**Productos inactivos.** Lista el id, el SKU y el nombre de los productos con estado `inactivo`.
+
+```sql
 -- Productos inactivos
 SELECT id_producto, sku, nombre FROM catalogo.productos WHERE estado = 'inactivo' ORDER BY id_producto;
+```
 
+**Pruebas de restricciones.** Ejecuta cuatro sentencias que violan a propósito las restricciones `UNIQUE`, `CHECK` y la llave foránea, y que deben terminar en error.
+
+```sql
 -- Pruebas de restricciones
 INSERT INTO catalogo.productos (sku,nombre,id_categoria,unidad_medida,precio_lista,estado) VALUES ('GRA-ARR-500','Repetido',1,'unidad',2800,'activo');  -- UNIQUE (SKU duplicado)
 INSERT INTO catalogo.productos (sku,nombre,id_categoria,unidad_medida,precio_lista,estado) VALUES ('T-NEG','Prueba',1,'unidad',-100,'activo');          -- CHECK (precio negativo)
 INSERT INTO catalogo.productos (sku,nombre,id_categoria,unidad_medida,precio_lista,estado) VALUES ('T-FK','Prueba',999,'unidad',1000,'activo');         -- FK (categoría inexistente)
 UPDATE catalogo.productos SET estado = 'borrado' WHERE id_producto = 1;                                                                                 -- CHECK IN (estado)
+```
 
+**Eliminación lógica.** Marca el producto 13 como `inactivo` en lugar de borrarlo con `DELETE`.
+
+```sql
 -- Eliminación lógica (en lugar de DELETE):
 UPDATE catalogo.productos SET estado = 'inactivo' WHERE id_producto = 13;
 ```
 
 ---
 
-## 2. Organización
+## 2. Organización (`organizacion`)
 
-Administra la infraestructura física y logística: la jerarquía de sedes comerciales, el centro de distribución y almacenes.
+> Administra la infraestructura física y logística: las sedes comerciales, el centro de distribución y los almacenes o bodegas de cada sede.
 
-Se inicializa la base de datos y se diseñan las tablas relacionales para sedes y almacenes corporativos.
-Se implementan restricciones de unicidad y verificación para asegurar tipos de sedes y bodegas válidos.
-Se establecen llaves foráneas para relacionar directamente cada almacén con su sede correspondiente.
+### 2.1 Creación de tablas (DDL)
+
+Se crea el esquema `organizacion` dentro de una transacción (`BEGIN`/`COMMIT`) con dos tablas: `sedes`, con nombre único, ciudad, dirección y tipo (`comercial` o `distribucion`), y `almacenes`, que pertenece a una sede mediante llave foránea. Cada almacén tiene un tipo (`principal`, `venta` o `recepcion`), la pareja sede–nombre es única y los estados y tipos se controlan con restricciones `CHECK`.
+
+```sql
+---___ creacion de tablas organizacion ---
+BEGIN;
+CREATE SCHEMA IF NOT EXISTS organizacion;
+
+CREATE TABLE IF NOT EXISTS organizacion.sedes (
+    id_sede   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nombre    VARCHAR(80)  NOT NULL UNIQUE,
+    ciudad    VARCHAR(60)  NOT NULL,
+    direccion VARCHAR(120) NOT NULL,
+    tipo_sede VARCHAR(15)  NOT NULL CHECK (tipo_sede IN ('comercial','distribucion')),
+    estado    VARCHAR(10)  NOT NULL CHECK (estado IN ('activo','inactivo'))
+);
+
+CREATE TABLE IF NOT EXISTS organizacion.almacenes (
+    id_almacen   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_sede      INTEGER      NOT NULL REFERENCES organizacion.sedes (id_sede),
+    nombre       VARCHAR(80)  NOT NULL,
+    tipo_almacen VARCHAR(20)  NOT NULL CHECK (tipo_almacen IN ('principal','venta','recepcion')),
+    estado       VARCHAR(10)  NOT NULL CHECK (estado IN ('activo','inactivo')),
+    UNIQUE (id_sede, nombre)
+);
+COMMIT;
+```
+
+### 2.2 Inserción de datos (DML)
+
+En una transacción se vacían las tablas y se insertan 4 sedes (Bogotá, Cali, Medellín y el Centro de Distribución Nacional en Barranquilla) y 8 almacenes distribuidos entre ellas, fijando los id con `OVERRIDING SYSTEM VALUE`. Al final se sincronizan las secuencias de identidad con `setval`. Los almacenes 1, 2 y 3 son los que ya usan los módulos de compras e inventarios.
+
+```sql
+--- adicionde datos de la organización ---
+
+BEGIN;
+
+TRUNCATE organizacion.almacenes, organizacion.sedes RESTART IDENTITY;
+
+INSERT INTO organizacion.sedes (id_sede, nombre, ciudad, direccion, tipo_sede, estado)
+OVERRIDING SYSTEM VALUE VALUES
+(1, 'Sede Bogotá',                    'Bogotá',       'Calle 19 # 7-30',                        'comercial',    'activo'),
+(2, 'Sede Cali',                      'Cali',         'Avenida 6 Norte # 28-45',                'comercial',    'activo'),
+(3, 'Sede Medellín',                  'Medellín',     'Carrera 43A # 14-50',                    'comercial',    'activo'),
+(4, 'Centro de Distribución Nacional','Barranquilla', 'Km 5 vía Circunvalar, Zona Industrial',  'distribucion', 'activo');
+
+INSERT INTO organizacion.almacenes (id_almacen, id_sede, nombre, tipo_almacen, estado)
+OVERRIDING SYSTEM VALUE VALUES
+(1, 1, 'Bodega Central de Almacenamiento Norte', 'principal', 'activo'),
+(2, 2, 'Almacén de Venta / Exhibición Principal','venta',     'activo'),
+(3, 3, 'Bodega Secundaria de Recepción',         'recepcion', 'activo'),
+(4, 1, 'Punto de Venta Bogotá',                  'venta',     'activo'),
+(5, 2, 'Almacén Principal Cali',                 'principal', 'activo'),
+(6, 3, 'Punto de Venta Medellín',                'venta',     'activo'),
+(7, 4, 'Almacén Principal Distribución',         'principal', 'activo'),
+(8, 4, 'Bodega de Recepción Distribución',       'recepcion', 'activo');
+
+SELECT setval(pg_get_serial_sequence('organizacion.sedes',     'id_sede'),    (SELECT max(id_sede)    FROM organizacion.sedes));
+SELECT setval(pg_get_serial_sequence('organizacion.almacenes', 'id_almacen'), (SELECT max(id_almacen) FROM organizacion.almacenes));
+
+COMMIT;
+```
+
+### 2.3 Vistas y consultas
+
+**Conteos.** Muestra cuántas filas hay en `sedes` y en `almacenes`.
+
+```sql
+-- pruebas de consultas organziacion ---
+
+
+-- Conteos
+SELECT 'sedes' AS tabla, count(*) AS filas FROM organizacion.sedes
+UNION ALL SELECT 'almacenes', count(*) FROM organizacion.almacenes;
+```
+
+**Almacenes por sede.** Lista cada sede con su tipo y los almacenes que le pertenecen (id, nombre y tipo de almacén).
+
+```sql
+-- Almacenes por sede
+SELECT s.id_sede, s.nombre AS sede, s.tipo_sede, a.id_almacen, a.nombre AS almacen, a.tipo_almacen
+FROM organizacion.sedes s JOIN organizacion.almacenes a ON a.id_sede = s.id_sede
+ORDER BY s.id_sede, a.id_almacen;
+```
+
+**Almacenes usados por compras e inventarios.** Muestra id, nombre y ciudad de los almacenes 1, 2 y 3.
+
+```sql
+-- Almacenes que ya usan compras e inventarios 
+SELECT a.id_almacen, a.nombre, s.ciudad
+FROM organizacion.almacenes a JOIN organizacion.sedes s ON s.id_sede = a.id_sede
+WHERE a.id_almacen IN (1, 2, 3) ORDER BY a.id_almacen;
+```
+
+**Pruebas de restricciones.** Ejecuta tres sentencias que violan a propósito la llave foránea, la restricción `UNIQUE` y un `CHECK`, y que deben terminar en error.
+
+```sql
+-- Pruebas de restricciones
+INSERT INTO organizacion.almacenes (id_sede, nombre, tipo_almacen, estado) VALUES (99, 'X', 'venta', 'activo');       -- FK inexistente
+INSERT INTO organizacion.sedes (nombre, ciudad, direccion, tipo_sede, estado) VALUES ('Sede Bogotá','Bogotá','x','comercial','activo'); -- UNIQUE
+INSERT INTO organizacion.sedes (nombre, ciudad, direccion, tipo_sede, estado) VALUES ('Otra','Cali','x','mixta','activo');              -- CHECK
+```
+
+---
+
+## 3. Compras (`compras`)
+
+> Gobierna el ciclo de abastecimiento: proveedores, costos de referencia, órdenes de compra hacia los almacenes y registro histórico de recepciones parciales o totales.
+
+### 3.1 Creación de tablas (DDL)
+
+Se crea la base `compras_db` y seis tablas: `proveedores`, `ordenes_compra`, `recepciones_compra` y las tablas de rompimiento `producto_proveedor`, `detalle_orden_compra` y `detalle_recepcion`. Las relaciones internas usan llaves foráneas con nombre, mientras que `id_producto`, `id_almacen_destino` y `id_empleado_creador` son referencias lógicas a catalogo, organizacion e identidad. Se incluyen restricciones `CHECK` para estados, cantidades positivas y costos no negativos.
 
 ```sql
 CREATE DATABASE compras_db;
+
 
 -- CREACIÓN DE TABLAS
 
@@ -214,6 +369,7 @@ CREATE TABLE proveedores (
     telefono 		VARCHAR(20) 	NOT NULL,
     estado			VARCHAR(10) 	NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
 );
+
 
 -- Órdenes de compra
 CREATE TABLE ordenes_compra (
@@ -232,6 +388,7 @@ CREATE TABLE ordenes_compra (
         ))
 );
 
+
 -- Recepciones de compra
 CREATE TABLE recepciones_compra (
     id_recepcion 	INT 		GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -240,6 +397,7 @@ CREATE TABLE recepciones_compra (
     estado 			VARCHAR(20) NOT NULL DEFAULT 'procesada'
         CHECK (estado IN ('procesada', 'anulada'))
 );
+
 
 -- Tabla de rompimiento: producto_proveedor
 CREATE TABLE producto_proveedor (
@@ -251,6 +409,7 @@ CREATE TABLE producto_proveedor (
     PRIMARY KEY (id_producto, id_proveedor)
 );
 
+
 -- Tabla de rompimiento: detalle_orden_compra
 CREATE TABLE detalle_orden_compra (
     id_orden_compra 	INT 		NOT null	CONSTRAINT fk_detalleord_orden	 REFERENCES ordenes_compra(id_orden_compra),
@@ -259,6 +418,7 @@ CREATE TABLE detalle_orden_compra (
     costo_unitario NUMERIC(12, 2) 	NOT null	CHECK (costo_unitario >= 0),
     PRIMARY KEY (id_orden_compra, id_producto)
 );
+
 
 -- Tabla de rompimiento: detalle_recepcion
 CREATE TABLE detalle_recepcion (
@@ -269,11 +429,14 @@ CREATE TABLE detalle_recepcion (
 );
 ```
 
-Se realiza la carga inicial de registros para las sedes comerciales y almacenes operativos del sistema.
-Se limpian las tablas previas reiniciando las secuencias de identidad para mantener orden numérico consecutivo.
-Los datos de prueba configuran sedes en Bogotá, Cali, Medellín y el centro de distribución en Barranquilla.
+### 3.2 Inserción de datos (DML)
+
+Se insertan 4 proveedores, 5 relaciones producto–proveedor con costo y plazo de entrega, 4 órdenes de compra en distintos estados (completada, recibida parcial, pendiente y cancelada) con sus detalles, 2 recepciones y 3 detalles de recepción. La orden 2 se recibe de forma parcial (120 de 200 unidades) para ilustrar el seguimiento del cumplimiento, y los id de producto, almacén y empleado coinciden con los demás microservicios.
 
 ```sql
+--------- inserción de data de prueba ----
+
+
 -- Proveedores
 INSERT INTO proveedores (
     identificacion,
@@ -289,7 +452,9 @@ VALUES
     ('890555444-3', 'Suministros Industriales del Caribe Ltda.', 'Barranquilla', 'servicio@suministroscaribe.com', '6053778899', 'activo'),
     ('901222333-4', 'Textiles y Moda Nacional S.A.S.', 'Medellín', 'comercial@textilesmoda.com', '6044441122', 'inactivo');
 
+
 -- Producto_proveedor
+-- Relaciona los productos del catálogo con sus costos de compra y tiempos de entrega
 INSERT INTO producto_proveedor (
     id_producto,
     id_proveedor,
@@ -298,13 +463,15 @@ INSERT INTO producto_proveedor (
     estado
 )
 VALUES
-    (101, 1, 120000.00, 3, 'activo'),
-    (102, 1, 450000.00, 5, 'activo'),
-    (103, 2, 3500.00, 2, 'activo'),
-    (104, 3, 25000.00, 7, 'activo'),
-    (105, 4, 85000.00, 10, 'inactivo');
+    (101, 1, 120000.00, 3, 'activo'),   -- Producto 101 proveído por Tech Colombia
+    (102, 1, 450000.00, 5, 'activo'),   -- Producto 102 proveído por Tech Colombia
+    (103, 2, 3500.00, 2, 'activo'),     -- Producto 103 proveído por Bebidas del Valle
+    (104, 3, 25000.00, 7, 'activo'),    -- Producto 104 proveído por Suministros del Caribe
+    (105, 4, 85000.00, 10, 'inactivo'); -- Producto 105 proveído por Textiles Nacional
+
 
 -- Órdenes de compra
+-- id_almacen_destino refiere a organizacion_db | id_empleado_creador refiere a identidad_db
 INSERT INTO ordenes_compra (
     id_proveedor,
     id_almacen_destino,
@@ -314,10 +481,11 @@ INSERT INTO ordenes_compra (
     estado
 )
 VALUES
-    (1, 1, 10, '2026-10-01 09:00:00', '2026-10-05', 'completada'),
-    (2, 2, 11, '2026-10-10 14:30:00', '2026-10-13', 'recibida_parcial'),
-    (3, 1, 10, '2026-11-01 10:15:00', '2026-11-08', 'pendiente'),
-    (4, 3, 11, '2026-11-02 11:00:00', '2026-11-12', 'cancelada');
+    (1, 1, 10, '2026-10-01 09:00:00', '2026-10-05', 'completada'),       -- Orden 1
+    (2, 2, 11, '2026-10-10 14:30:00', '2026-10-13', 'recibida_parcial'), -- Orden 2
+    (3, 1, 10, '2026-11-01 10:15:00', '2026-11-08', 'pendiente'),       -- Orden 3
+    (4, 3, 11, '2026-11-02 11:00:00', '2026-11-12', 'cancelada');       -- Orden 4
+
 
 -- Detalle_orden_compra
 INSERT INTO detalle_orden_compra (
@@ -327,11 +495,12 @@ INSERT INTO detalle_orden_compra (
     costo_unitario
 )
 VALUES
-    (1, 101, 50, 120000.00),
-    (1, 102, 30, 450000.00),
-    (2, 103, 200, 3500.00),
-    (3, 104, 100, 25000.00),
-    (4, 105, 15, 85000.00);
+    (1, 101, 50, 120000.00), -- Orden 1 pide 50 unidades de Prod 101
+    (1, 102, 30, 450000.00), -- Orden 1 pide 30 unidades de Prod 102
+    (2, 103, 200, 3500.00),  -- Orden 2 pide 200 unidades de Prod 103
+    (3, 104, 100, 25000.00), -- Orden 3 pide 100 unidades de Prod 104
+    (4, 105, 15, 85000.00);  -- Orden 4 pide 15 unidades de Prod 105
+
 
 -- Recepciones_compra
 INSERT INTO recepciones_compra (
@@ -340,8 +509,9 @@ INSERT INTO recepciones_compra (
     estado
 )
 VALUES
-    (1, '2026-10-04 16:20:00', 'procesada'),
-    (2, '2026-10-12 11:10:00', 'procesada');
+    (1, '2026-10-04 16:20:00', 'procesada'), -- Recepción 1 para Orden 1 (Completada)
+    (2, '2026-10-12 11:10:00', 'procesada'); -- Recepción 2 para Orden 2 (Parcial)
+
 
 -- Detalle_recepcion
 INSERT INTO detalle_recepcion (
@@ -350,201 +520,19 @@ INSERT INTO detalle_recepcion (
     cantidad_recibida
 )
 VALUES
-    (1, 101, 50),
-    (1, 102, 30),
-    (2, 103, 120);
+    (1, 101, 50), -- Recepción 1 recibe completas las 50 un. de Prod 101
+    (1, 102, 30), -- Recepción 1 recibe completas las 30 un. de Prod 102
+    (2, 103, 120); -- Recepción 2 recibe solo 120 de las 200 un. de Prod 103 (Quedan 80 pendientes)
 ```
 
-Se ejecutan consultas de conteo global, relación jerárquica entre sedes y almacenes, y validaciones de restricciones.
-- Muestra el conteo total de registros de sedes y almacenes corporativos.
-- Muestra el listado detallado de almacenes asociados a cada sede de la empresa.
-- Muestra los almacenes específicos vinculados con los procesos de compras e inventarios.
-- Valida las restricciones de integridad referencial y de dominio mediante inserciones erróneas de prueba.
+### 3.3 Vistas y consultas
+
+**`v_resumen_cumplimiento_ordenes`.** Muestra, por cada orden de compra, el proveedor, las unidades y el valor solicitados, las unidades recibidas en recepciones procesadas y el porcentaje de cumplimiento.
 
 ```sql
--- Conteos
-SELECT 'sedes' AS tabla, count(*) AS filas FROM organizacion.sedes
-UNION ALL SELECT 'almacenes', count(*) FROM organizacion.almacenes;
+--- vistas de prueba --- compras
 
--- Almacenes por sede
-SELECT s.id_sede, s.nombre AS sede, s.tipo_sede, a.id_almacen, a.nombre AS almacen, a.tipo_almacen
-FROM organizacion.sedes s JOIN organizacion.almacenes a ON a.id_sede = s.id_sede
-ORDER BY s.id_sede, a.id_almacen;
 
--- Almacenes que ya usan compras e inventarios 
-SELECT a.id_almacen, a.nombre, s.ciudad
-FROM organizacion.almacenes a JOIN organizacion.sedes s ON s.id_sede = a.id_sede
-WHERE a.id_almacen IN (1, 2, 3) ORDER BY a.id_almacen;
-
--- Pruebas de restricciones
-INSERT INTO organizacion.almacenes (id_sede, nombre, tipo_almacen, estado) VALUES (99, 'X', 'venta', 'activo');       -- FK inexistente
-INSERT INTO organizacion.sedes (nombre, ciudad, direccion, tipo_sede, estado) VALUES ('Sede Bogotá','Bogotá','x','comercial','activo'); -- UNIQUE
-INSERT INTO organizacion.sedes (nombre, ciudad, direccion, tipo_sede, estado) VALUES ('Otra','Cali','x','mixta','activo');              -- CHECK
-```
-
----
-
-## 3. Compras
-
-Gobierna el ciclo de abastecimiento: directorio de proveedores, costos de referencia, órdenes de compra y recepciones.
-
-Se estructuran las tablas relacionales para el control de proveedores, órdenes de compra y recepciones de mercancía.
-Se crean tablas de rompimiento y detalle para asociar productos con proveedores y gestionar cantidades solicitadas.
-Se aplican restricciones de verificación en costos, plazos de entrega y estados de órdenes con dominios estrictos.
-
-```sql
--- (Nota: la creación de base de datos se omitirá o mantendrá según el script original)
--- Proveedores
-CREATE TABLE proveedores (
-    id_proveedor 	INT 			GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    identificacion 	VARCHAR(20) 	NOT NULL CONSTRAINT id_unico UNIQUE,
-    razon_social 	VARCHAR(100) 	NOT NULL CONSTRAINT razon_unica UNIQUE,
-    ciudad 			VARCHAR(50) 	NOT NULL,
-    correo 			VARCHAR(100) 	NOT NULL,
-    telefono 		VARCHAR(20) 	NOT NULL,
-    estado			VARCHAR(10) 	NOT NULL DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
-);
-
--- Órdenes de compra
-CREATE TABLE ordenes_compra (
-    id_orden_compra 	INT 		GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    id_proveedor 		INT 		NOT null CONSTRAINT fk_orden_proveedor REFERENCES proveedores(id_proveedor),
-    id_almacen_destino 	INT 		NOT NULL,
-    id_empleado_creador INT 		NOT NULL,
-    fecha_orden 		TIMESTAMP 	NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    fecha_estimada 		DATE 		NOT NULL,
-    estado 				VARCHAR(20) NOT NULL DEFAULT 'pendiente'
-        CHECK (estado IN ('pendiente', 'recibida_parcial', 'completada', 'cancelada'))
-);
-
--- Recepciones de compra
-CREATE TABLE recepciones_compra (
-    id_recepcion 	INT 		GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    id_orden_compra INT 		NOT null CONSTRAINT fk_recepcion_orden REFERENCES ordenes_compra(id_orden_compra),
-    fecha_recepcion TIMESTAMP 	NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estado 			VARCHAR(20) NOT NULL DEFAULT 'procesada'
-        CHECK (estado IN ('procesada', 'anulada'))
-);
-
--- Tabla de rompimiento: producto_proveedor
-CREATE TABLE producto_proveedor (
-    id_producto 		INT NOT NULL,
-    id_proveedor 		INT NOT null 	CONSTRAINT fk_prodprov_proveedor REFERENCES proveedores(id_proveedor),
-    costo_referencia 	NUMERIC(12, 2) 	NOT null 	CHECK (costo_referencia >= 0),
-    plazo_entrega_dias 	INT 			NOT null 	CHECK (plazo_entrega_dias >= 0),
-    estado 				VARCHAR(10) 	NOT NULL 	DEFAULT 'activo' 	CHECK (estado IN ('activo', 'inactivo')),
-    PRIMARY KEY (id_producto, id_proveedor)
-);
-
--- Tabla de rompimiento: detalle_orden_compra
-CREATE TABLE detalle_orden_compra (
-    id_orden_compra 	INT 		NOT null	CONSTRAINT fk_detalleord_orden	 REFERENCES ordenes_compra(id_orden_compra),
-    id_producto 		INT 		NOT NULL,
-    cantidad_solicitada INT 		NOT null 	CHECK (cantidad_solicitada > 0),
-    costo_unitario NUMERIC(12, 2) 	NOT null	CHECK (costo_unitario >= 0),
-    PRIMARY KEY (id_orden_compra, id_producto)
-);
-
--- Tabla de rompimiento: detalle_recepcion
-CREATE TABLE detalle_recepcion (
-    id_recepcion 		INT 	NOT null	CONSTRAINT fk_detallerec_recepcion	REFERENCES recepciones_compra(id_recepcion),
-    id_producto 		INT 	NOT NULL,
-    cantidad_recibida 	INT 	NOT null	CHECK (cantidad_recibida > 0),
-    PRIMARY KEY (id_recepcion, id_producto)
-);
-```
-
-Se insertan registros de prueba correspondientes a proveedores registrados y sus ofertas de productos asociadas.
-Se registran órdenes de compra y sus detalles con cantidades, costos unitarios y fechas estimadas de entrega.
-Se agregan los registros de recepciones de mercancía parciales y totales vinculados al histórico de compras.
-
-```sql
--- Proveedores
-INSERT INTO proveedores (
-    identificacion,
-    razon_social,
-    ciudad,
-    correo,
-    telefono,
-    estado
-)
-VALUES
-    ('900123456-1', 'Distribuidora Tech Colombia S.A.S.', 'Bogotá', 'contacto@techcolombia.com', '6013112233', 'activo'),
-    ('800987654-2', 'Comercializadora de Bebidas del Valle S.A.', 'Cali', 'ventas@bebidasdelvalle.co', '6025554433', 'activo'),
-    ('890555444-3', 'Suministros Industriales del Caribe Ltda.', 'Barranquilla', 'servicio@suministroscaribe.com', '6053778899', 'activo'),
-    ('901222333-4', 'Textiles y Moda Nacional S.A.S.', 'Medellín', 'comercial@textilesmoda.com', '6044441122', 'inactivo');
-
--- Producto_proveedor
-INSERT INTO producto_proveedor (
-    id_producto,
-    id_proveedor,
-    costo_referencia,
-    plazo_entrega_dias,
-    estado
-)
-VALUES
-    (101, 1, 120000.00, 3, 'activo'),
-    (102, 1, 450000.00, 5, 'activo'),
-    (103, 2, 3500.00, 2, 'activo'),
-    (104, 3, 25000.00, 7, 'activo'),
-    (105, 4, 85000.00, 10, 'inactivo');
-
--- Órdenes de compra
-INSERT INTO ordenes_compra (
-    id_proveedor,
-    id_almacen_destino,
-    id_empleado_creador,
-    fecha_orden,
-    fecha_estimada,
-    estado
-)
-VALUES
-    (1, 1, 10, '2026-10-01 09:00:00', '2026-10-05', 'completada'),
-    (2, 2, 11, '2026-10-10 14:30:00', '2026-10-13', 'recibida_parcial'),
-    (3, 1, 10, '2026-11-01 10:15:00', '2026-11-08', 'pendiente'),
-    (4, 3, 11, '2026-11-02 11:00:00', '2026-11-12', 'cancelada');
-
--- Detalle_orden_compra
-INSERT INTO detalle_orden_compra (
-    id_orden_compra,
-    id_producto,
-    cantidad_solicitada,
-    costo_unitario
-)
-VALUES
-    (1, 101, 50, 120000.00),
-    (1, 102, 30, 450000.00),
-    (2, 103, 200, 3500.00),
-    (3, 104, 100, 25000.00),
-    (4, 105, 15, 85000.00);
-
--- Recepciones_compra
-INSERT INTO recepciones_compra (
-    id_orden_compra,
-    fecha_recepcion,
-    estado
-)
-VALUES
-    (1, '2026-10-04 16:20:00', 'procesada'),
-    (2, '2026-10-12 11:10:00', 'procesada');
-
--- Detalle_recepcion
-INSERT INTO detalle_recepcion (
-    id_recepcion,
-    id_producto,
-    cantidad_recibida
-)
-VALUES
-    (1, 101, 50),
-    (1, 102, 30),
-    (2, 103, 120);
-```
-
-Se configuran vistas analíticas para el seguimiento de órdenes de compra y costos de proveedores activos.
-- Muestra el resumen consolidado del cumplimiento de órdenes de compra y porcentajes recibidos.
-- Muestra el catálogo de costos y plazos de entrega asociados a cada proveedor activo.
-
-```sql
 --  v_resumen_cumplimiento_ordenes
 CREATE OR REPLACE VIEW v_resumen_cumplimiento_ordenes AS
 SELECT
@@ -590,7 +578,11 @@ GROUP BY
     p.razon_social,
     p.ciudad,
     oc.id_almacen_destino;
+```
 
+**`v_catalogo_costos_proveedores`.** Muestra, para los proveedores activos, los productos que ofrecen con su costo de referencia, plazo de entrega, estado de la oferta y el total de órdenes históricas.
+
+```sql
 -- v_catalogo_costos_proveedores
 CREATE OR REPLACE VIEW v_catalogo_costos_proveedores AS
 SELECT
@@ -622,20 +614,20 @@ GROUP BY
 
 ---
 
-## 4. Inventarios
+## 4. Inventarios (`inventarios`)
 
-Controla la existencia física por almacén y sede, el stock mínimo y el movimiento de mercancía entre almacenes.
+> Controla la existencia física por almacén y sede, el stock mínimo y el movimiento de mercancía entre almacenes mediante transferencias.
 
-Se definen las tablas de inventario físico, transferencias entre bodegas y el detalle de los traslados.
-Se incorporan restricciones de unicidad para evitar duplicidad de productos por almacén y control de existencia no negativa.
-Se establece una validación para garantizar que los almacenes de origen y destino en transferencias sean diferentes.
+### 4.1 Creación de tablas (DDL)
+
+Se crean tres tablas: `inventarios`, con la existencia actual y el stock mínimo por almacén y producto (única por pareja almacén–producto), `transferencias`, que registra los movimientos entre almacenes con sus fechas de solicitud, despacho y recepción, y `detalle_transferencia`, con los productos trasladados. Las restricciones `CHECK` impiden existencias negativas, cantidades no positivas y transferencias con el mismo almacén de origen y destino.
 
 ```sql
 -- 1. INVENTARIOS (Existencias de productos por almacén)
 CREATE TABLE inventarios (
-    id_almacen	      	INT,
-    id_producto         INT 		NOT NULL,
-    id_sede				INT 		not null,
+    id_almacen	      	INT,				-- Referencia lógica a catalogo_db
+    id_producto         INT 		NOT NULL,		-- Referencia lógica a catalogo_db
+    id_sede				INT 		not null,		-- Referencia lógica a catalogo_db
     existencia_actual   INT 		NOT NULL DEFAULT 0	 CONSTRAINT chk_existencia_no_negativa CHECK (existencia_actual >= 0),
     stock_minimo        INT 		NOT NULL DEFAULT 10	CONSTRAINT chk_stock_min_no_negativo CHECK (stock_minimo >= 0),
     fecha_actualizacion TIMESTAMP 	NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -643,11 +635,12 @@ CREATE TABLE inventarios (
     CONSTRAINT uk_almacen_producto UNIQUE (id_almacen, id_producto)
 );
 
+
 -- 2. TRANSFERENCIAS (Movimientos de stock entre sedes/almacenes)
 CREATE TABLE transferencias (
     id_transferencia        INT 		GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    id_almacen_origen       INT 		NOT NULL,
-    id_almacen_destino      INT 		NOT NULL,
+    id_almacen_origen       INT 		NOT NULL,	-- Referencia lógica a organizacion_db
+    id_almacen_destino      INT 		NOT NULL,	-- Referencia lógica a organizacion_db
     fecha_solicitud         TIMESTAMP 	NOT NULL DEFAULT CURRENT_TIMESTAMP,
     fecha_despacho          TIMESTAMP,
     fecha_recepcion         TIMESTAMP,
@@ -657,22 +650,30 @@ CREATE TABLE transferencias (
         CHECK (id_almacen_origen <> id_almacen_destino)
 );
 
+
 -- 3. DETALLE_TRANSFERENCIA (Productos trasladados en cada transferencia)
 CREATE TABLE detalle_transferencia (
     id_transferencia 	INT 	NOT null	CONSTRAINT fk_dettransf_transferencia	REFERENCES transferencias(id_transferencia)	ON DELETE CASCADE,
-    id_producto      	INT 	NOT NULL,
+    id_producto      	INT 	NOT NULL,	-- Referencia lógica a catalogo_db
     cantidad_enviada 	INT 	NOT null	CONSTRAINT chk_cant_enviada_pos CHECK (cantidad_enviada > 0),
     cantidad_recibida 	INT	CONSTRAINT chk_cant_recibida_valida CHECK (cantidad_recibida >= 0),
     PRIMARY KEY (id_transferencia, id_producto)
 );
 ```
 
-Se insertan datos iniciales para simular las existencias de productos en los diferentes almacenes logísticos.
-Se registran transferencias de mercancía en diferentes estados como completada, despachada y solicitada.
-Se completan los detalles de las transferencias especificando cantidades enviadas y recibidas por producto.
+### 4.2 Inserción de datos (DML)
+
+Se insertan 5 registros de inventario para los productos 101 a 105 en los almacenes 1 a 3, 3 transferencias en distintos estados (completada, despachada y solicitada) y 4 líneas de detalle. El producto 104 queda con cero existencias en el almacén 3 para activar la alerta de reabastecimiento, y las cantidades recibidas son `NULL` mientras la mercancía sigue en tránsito o solicitada.
 
 ```sql
+-- =============================================================================
+-- SCRIPT DE POBLAMIENTO DE DATOS DE PRUEBA: Módulo Inventarios y Transferencias
+-- Base de Datos: inventarios_db (Servidor Azure PostgreSQL)
+-- =============================================================================
+
+
 -- Inventarios
+-- Relaciona el stock físico de productos (101-105) en los almacenes (1-3)
 INSERT INTO inventarios (
     id_almacen,
     id_producto,
@@ -682,11 +683,12 @@ INSERT INTO inventarios (
     fecha_actualizacion
 )
 VALUES
-    (1, 101, 1, 50, 10, '2026-10-04 16:30:00'),
-    (1, 102, 1, 30, 5, '2026-10-04 16:30:00'),
-    (2, 103, 2, 120, 20, '2026-10-12 11:15:00'),
-    (3, 104, 3, 0, 15, '2026-11-01 08:00:00'),
-    (1, 105, 1, 15, 5, '2026-11-02 12:00:00');
+    (1, 101, 1, 50, 10, '2026-10-04 16:30:00'), -- Almacén 1 (Bogotá) tiene 50 un. de Prod 101 (Teclado)
+    (1, 102, 1, 30, 5, '2026-10-04 16:30:00'),  -- Almacén 1 (Bogotá) tiene 30 un. de Prod 102 (Monitor)
+    (2, 103, 2, 120, 20, '2026-10-12 11:15:00'), -- Almacén 2 (Cali) tiene 120 un. de Prod 103 (Bebidas)
+    (3, 104, 3, 0, 15, '2026-11-01 08:00:00'),  -- Almacén 3 (Medellín) en 0 stock de Prod 104 (ALERTA REABASTECIMIENTO)
+    (1, 105, 1, 15, 5, '2026-11-02 12:00:00'); -- Almacén 1 (Bogotá) tiene 15 un. de Prod 105 (Uniforme)
+
 
 -- Transferencias
 INSERT INTO transferencias (
@@ -698,9 +700,10 @@ INSERT INTO transferencias (
     estado
 )
 VALUES
-    (1, 2, '2026-11-05 10:00:00', '2026-11-05 14:00:00', '2026-11-06 09:30:00', 'completada'),
-    (1, 3, '2026-11-09 11:00:00', '2026-11-09 16:00:00', NULL, 'despachada'),
-    (2, 1, '2026-11-10 08:30:00', NULL, NULL, 'solicitada');
+    (1, 2, '2026-11-05 10:00:00', '2026-11-05 14:00:00', '2026-11-06 09:30:00', 'completada'), -- Transferencia 1
+    (1, 3, '2026-11-09 11:00:00', '2026-11-09 16:00:00', NULL, 'despachada'),                  -- Transferencia 2 (en tránsito)
+    (2, 1, '2026-11-10 08:30:00', NULL, NULL, 'solicitada');                                  -- Transferencia 3 (pendiente)
+
 
 -- Detalle_transferencia
 INSERT INTO detalle_transferencia (
@@ -710,17 +713,20 @@ INSERT INTO detalle_transferencia (
     cantidad_recibida
 )
 VALUES
-    (1, 101, 10, 10),
-    (1, 102, 5, 5),
-    (2, 104, 20, NULL),
-    (3, 103, 30, NULL);
+    (1, 101, 10, 10),  -- Transf 1: Se enviaron 10 un. de Prod 101 de Bogotá a Cali (Recibidas completas)
+    (1, 102, 5, 5),    -- Transf 1: Se enviaron 5 un. de Prod 102 de Bogotá a Cali (Recibidas completas)
+    (2, 104, 20, NULL),-- Transf 2: Se enviaron 20 un. de Prod 104 a Medellín (Aún en camino)
+    (3, 103, 30, NULL);-- Transf 3: Solicitadas 30 un. de Prod 103 de Cali a Bogotá
 ```
 
-Se implementan vistas de control de stock y seguimiento de transferencias entre bodegas.
-- Muestra las alertas de reabastecimiento y déficit crítico de productos por almacén.
-- Muestra el balance consolidado de transferencias de mercancía y discrepancias de unidades.
+### 4.3 Vistas y consultas
+
+**`v_alertas_reabastecimiento_almacen`.** Muestra los productos cuya existencia está en o por debajo del stock mínimo, con su déficit y un nivel de prioridad (crítica o alerta), ordenados de menor a mayor existencia.
 
 ```sql
+---- Script vista de prueba --- inventarios
+
+
 --  v_alertas_reabastecimiento_almacen
 CREATE OR REPLACE VIEW v_alertas_reabastecimiento_almacen AS
 SELECT
@@ -742,7 +748,11 @@ WHERE i.existencia_actual <= i.stock_minimo
 ORDER BY
     i.existencia_actual ASC,
     i.stock_minimo DESC;
+```
 
+**`v_balance_transferencias_bodegas`.** Muestra, por cada transferencia, su origen, destino, estado, variedad de productos, unidades enviadas y recibidas, y la discrepancia entre ambas.
+
+```sql
 --  v_balance_transferencias_bodegas
 CREATE OR REPLACE VIEW v_balance_transferencias_bodegas AS
 SELECT
@@ -775,76 +785,18 @@ GROUP BY
 
 ---
 
-## 5. Ventas
+## 5. Ventas (`ventas`)
 
-Maneja el ciclo comercial orientado al cliente: clientes, pedidos de venta, detalle de cada pedido, pagos y devoluciones.
+> Maneja el ciclo comercial orientado al cliente: clientes, pedidos de venta, detalle de cada pedido, pagos parciales o totales y devoluciones.
 
-Se configuran las estructuras de bases de datos para clientes, pedidos, detalles, pagos y devoluciones.
-Se establecen llaves foráneas e integridad referencial garantizando el vínculo con entidades de otros microservicios.
-Se aplican restricciones de verificación de estados comerciales y montos monetarios válidos no negativos.
+### 5.1 Creación de tablas (DDL)
 
-```sql
-BEGIN;
-CREATE SCHEMA IF NOT EXISTS organizacion;
-
-CREATE TABLE IF NOT EXISTS organizacion.sedes (
-    id_sede   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    nombre    VARCHAR(80)  NOT NULL UNIQUE,
-    ciudad    VARCHAR(60)  NOT NULL,
-    direccion VARCHAR(120) NOT NULL,
-    tipo_sede VARCHAR(15)  NOT NULL CHECK (tipo_sede IN ('comercial','distribucion')),
-    estado    VARCHAR(10)  NOT NULL CHECK (estado IN ('activo','inactivo'))
-);
-
-CREATE TABLE IF NOT EXISTS organizacion.almacenes (
-    id_almacen   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    id_sede      INTEGER      NOT NULL REFERENCES organizacion.sedes (id_sede),
-    nombre       VARCHAR(80)  NOT NULL,
-    tipo_almacen VARCHAR(20)  NOT NULL CHECK (tipo_almacen IN ('principal','venta','recepcion')),
-    estado       VARCHAR(10)  NOT NULL CHECK (estado IN ('activo','inactivo')),
-    UNIQUE (id_sede, nombre)
-);
-COMMIT;
-```
-
-Se insertan datos iniciales de prueba para clientes, pedidos de venta, pagos registrados y devoluciones.
-Se reinician las secuencias de identidad y se cargan los detalles correspondientes a cada transacción comercial.
-Estos datos permiten evaluar la trazabilidad completa del ciclo de ventas y gestión de cartera.
+Se crean seis tablas: `clientes`, `pedidos_venta`, `detalle_pedido`, `pagos`, `devoluciones` y `detalle_devolucion`. Los pedidos referencian a un cliente mediante llave foránea y los detalles se eliminan en cascada, mientras que sede, almacén, empleado y producto son referencias lógicas a otros microservicios. Las restricciones `CHECK` controlan estados, medios de pago, cantidades positivas y valores no negativos.
 
 ```sql
-BEGIN;
+-- creacion de tablas ventas_db ---
 
-TRUNCATE organizacion.almacenes, organizacion.sedes RESTART IDENTITY;
 
-INSERT INTO organizacion.sedes (id_sede, nombre, ciudad, direccion, tipo_sede, estado)
-OVERRIDING SYSTEM VALUE VALUES
-(1, 'Sede Bogotá',                    'Bogotá',       'Calle 19 # 7-30',                        'comercial',    'activo'),
-(2, 'Sede Cali',                      'Cali',         'Avenida 6 Norte # 28-45',                'comercial',    'activo'),
-(3, 'Sede Medellín',                  'Medellín',     'Carrera 43A # 14-50',                    'comercial',    'activo'),
-(4, 'Centro de Distribución Nacional','Barranquilla', 'Km 5 vía Circunvalar, Zona Industrial',  'distribucion', 'activo');
-
-INSERT INTO organizacion.almacenes (id_almacen, id_sede, nombre, tipo_almacen, estado)
-OVERRIDING SYSTEM VALUE VALUES
-(1, 1, 'Bodega Central de Almacenamiento Norte', 'principal', 'activo'),
-(2, 2, 'Almacén de Venta / Exhibición Principal','venta',     'activo'),
-(3, 3, 'Bodega Secundaria de Recepción',         'recepcion', 'activo'),
-(4, 1, 'Punto de Venta Bogotá',                  'venta',     'activo'),
-(5, 2, 'Almacén Principal Cali',                 'principal', 'activo'),
-(6, 3, 'Punto de Venta Medellín',                'venta',     'activo'),
-(7, 4, 'Almacén Principal Distribución',         'principal', 'activo'),
-(8, 4, 'Bodega de Recepción Distribución',       'recepcion', 'activo');
-
-SELECT setval(pg_get_serial_sequence('organizacion.sedes',     'id_sede'),    (SELECT max(id_sede)    FROM organizacion.sedes));
-SELECT setval(pg_get_serial_sequence('organizacion.almacenes', 'id_almacen'), (SELECT max(id_almacen) FROM organizacion.almacenes));
-
-COMMIT;
-```
-
-Se establecen consultas analíticas para el seguimiento de cartera, saldos de pedidos e impacto de devoluciones.
-- Muestra el estado de cartera y saldos pendientes de pago asociados a cada pedido de venta.
-- Muestra el impacto monetario y las condiciones de los productos en las devoluciones registradas.
-
-```sql
 -- 1. CLIENTES (Tabla Maestra Independiente)
 CREATE TABLE clientes (
     id_cliente      INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -858,20 +810,25 @@ CREATE TABLE clientes (
         CHECK (estado IN ('activo', 'inactivo'))
 );
 
--- 2. PEDIDOS DE VENTA
+
+-- 2. PEDIDOS DE VENTA (Sede / Almacén / Empleado son FKL)
 CREATE TABLE pedidos_venta (
     id_pedido       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_sede         INT NOT NULL,
+    -- FKL a organizacion_db.sedes
     id_almacen      INT NOT NULL,
+    -- FKL a organizacion_db.almacenes
     id_cliente      INT NOT NULL
         CONSTRAINT fk_pedido_cliente REFERENCES clientes(id_cliente),
     id_empleado     INT NOT NULL,
+    -- FKL a identidad_db.empleados
     fecha_pedido    DATE NOT NULL DEFAULT CURRENT_DATE,
     estado          VARCHAR(15) NOT NULL DEFAULT 'pendiente'
         CHECK (estado IN ('pendiente', 'completado', 'cancelado', 'devolucion')),
     total_registrado NUMERIC(14,2) NOT NULL DEFAULT 0.00
         CHECK (total_registrado >= 0)
 );
+
 
 -- 3. DETALLE DE PEDIDO
 CREATE TABLE detalle_pedido (
@@ -880,10 +837,12 @@ CREATE TABLE detalle_pedido (
         REFERENCES pedidos_venta(id_pedido)
         ON DELETE CASCADE,
     id_producto     INT NOT NULL,
+    -- FKL a catalogo_db.productos
     cantidad        INT NOT NULL CHECK (cantidad > 0),
     precio_unitario NUMERIC(12,2) NOT NULL CHECK (precio_unitario >= 0),
     PRIMARY KEY (id_pedido, id_producto)
 );
+
 
 -- 4. PAGOS
 CREATE TABLE pagos (
@@ -898,6 +857,7 @@ CREATE TABLE pagos (
         CHECK (estado IN ('aprobado', 'rechazado', 'anulado'))
 );
 
+
 -- 5. DEVOLUCIONES
 CREATE TABLE devoluciones (
     id_devolucion   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -909,6 +869,7 @@ CREATE TABLE devoluciones (
         CHECK (estado IN ('pendiente', 'aprobada', 'rechazada'))
 );
 
+
 -- 6. DETALLE DE DEVOLUCION
 CREATE TABLE detalle_devolucion (
     id_devolucion       INT NOT NULL
@@ -916,6 +877,7 @@ CREATE TABLE detalle_devolucion (
         REFERENCES devoluciones(id_devolucion)
         ON DELETE CASCADE,
     id_producto         INT NOT NULL,
+    -- FKL a catalogo_db.productos
     cantidad            INT NOT NULL CHECK (cantidad > 0),
     condicion_producto  VARCHAR(20) NOT NULL
         CHECK (condicion_producto IN ('buen_estado', 'defectuoso', 'empaque_abierto')),
@@ -923,17 +885,217 @@ CREATE TABLE detalle_devolucion (
 );
 ```
 
----
+### 5.2 Inserción de datos (DML)
 
-## 6. Identidad
-
-Actúa como módulo de seguridad y de administración de personal: empleados, cuentas de usuario y registro centralizado de auditoría.
-
-Se implementan las tablas de empleados, credenciales de usuario e historial de auditoría de accesos.
-Se definen restricciones de unicidad en documentos de identidad, nombres de usuario y llaves foráneas asociadas.
-Se configuran los campos de auditoría temporal con marcas de tiempo automáticas para cada operación de sistema.
+Se insertan 4 clientes, 4 pedidos en distintos estados (completado, devolución y pendiente) con sus detalles, 4 pagos (uno de ellos dividido en dos abonos), una devolución aprobada y su detalle. El pedido 3 corresponde a la devolución de un teclado defectuoso, y los id de sede, almacén, empleado y producto coinciden con los datos de los otros microservicios.
 
 ```sql
+-- agregación de datos a ventas ---
+-- =============================================================================
+-- SCRIPT DE POBLAMIENTO DE DATOS DE PRUEBA: Módulo Ventas y Pagos
+-- Base de Datos: ventas_db
+-- =============================================================================
+
+
+-- Clientes
+INSERT INTO clientes (
+    tipo_documento,
+    num_documento,
+    nombre_completo,
+    correo,
+    telefono,
+    estado
+)
+VALUES
+    ('CC', '1018222333', 'Juan Pablo Pérez Gómez', 'juan.perez@email.com', '3101234567', 'activo'),
+    ('CC', '1020444555', 'María Fernanda Suárez', 'maria.suarez@email.com', '3159876543', 'activo'),
+    ('NIT', '901555666-8', 'Inversiones y Construcciones Capital S.A.S.', 'compras@inversionescapital.co', '6017890123', 'activo'),
+    ('CE', 'E888999', 'John Alexander Smith', 'john.smith@email.com', '3204445566', 'inactivo');
+
+
+-- Pedidos_venta
+-- id_sede e id_almacen refieren a organizacion_db | id_empleado refiere a identidad_db
+INSERT INTO pedidos_venta (
+    id_sede,
+    id_almacen,
+    id_cliente,
+    id_empleado,
+    fecha_pedido,
+    estado,
+    total_registrado
+)
+VALUES
+    (1, 1, 1, 10, '2026-10-15', 'completado', 1590000.00), -- Pedido 1 (Sede Bogotá, Vendedor 10)
+    (2, 2, 2, 11, '2026-10-20', 'completado', 350000.00),  -- Pedido 2 (Sede Cali, Vendedora 11)
+    (1, 1, 3, 10, '2026-11-03', 'devolucion', 600000.00),  -- Pedido 3 (Sede Bogotá, Vendedor 10)
+    (3, 3, 4, 11, '2026-11-08', 'pendiente', 180000.00);   -- Pedido 4 (Sede Medellín, Vendedora 11)
+
+
+-- Detalle_pedido
+-- id_producto refiere a catalogo_db
+INSERT INTO detalle_pedido (
+    id_pedido,
+    id_producto,
+    cantidad,
+    precio_unitario
+)
+VALUES
+    (1, 101, 2, 170000.00),  -- Pedido 1: 2 Teclados Mecánicos
+    (1, 102, 1, 1250000.00), -- Pedido 1: 1 Monitor Gamer 27"
+    (2, 103, 100, 3500.00),  -- Pedido 2: 100 Bebidas Energizantes
+    (3, 101, 3, 200000.00),  -- Pedido 3: 3 Teclados Mecánicos
+    (4, 104, 5, 36000.00);   -- Pedido 4: 5 Kits de Limpieza
+
+
+-- Pagos
+INSERT INTO pagos (
+    id_pedido,
+    fecha_pago,
+    valor,
+    medio_pago,
+    estado
+)
+VALUES
+    (1, '2026-10-15', 1590000.00, 'tarjeta_credito', 'aprobado'), -- Pago completo Pedido 1
+    (2, '2026-10-20', 200000.00, 'efectivo', 'aprobado'),         -- Pago parcial 1 Pedido 2
+    (2, '2026-10-21', 150000.00, 'transferencia', 'aprobado'),   -- Pago parcial 2 Pedido 2 (Completa saldo)
+    (3, '2026-11-03', 600000.00, 'tarjeta_debito', 'aprobado');  -- Pago completo Pedido 3
+
+
+-- Devoluciones
+INSERT INTO devoluciones (
+    id_pedido,
+    fecha_solicitud,
+    motivo,
+    estado
+)
+VALUES
+    (3, '2026-11-05', 'Producto presentó falla eléctrica de fábrica en teclado', 'aprobada');
+
+
+-- Detalle_devolucion
+-- id_producto refiere a catalogo_db
+INSERT INTO detalle_devolucion (
+    id_devolucion,
+    id_producto,
+    cantidad,
+    condicion_producto
+)
+VALUES
+    (1, 101, 1, 'defectuoso'); -- Devolución 1: 1 unidad del Prod 101
+```
+
+### 5.3 Vistas y consultas
+
+**`v_cartera_y_saldo_pedidos`.** Muestra, por cada pedido, el cliente, el valor total, lo recaudado con pagos aprobados, el saldo pendiente y el estado de cartera (pagado total, pago parcial o pendiente de pago).
+
+```sql
+ --- Vistas de prueba para ventas ----
+    -- =============================================================================
+-- VISTAS: Microservicio de Ventas y Pagos
+-- =============================================================================
+
+
+-- Vista 3.1: v_cartera_y_saldo_pedidos
+CREATE OR REPLACE VIEW v_cartera_y_saldo_pedidos AS
+SELECT
+    pv.id_pedido,
+    pv.fecha_pedido,
+    pv.id_sede,
+    pv.id_almacen,
+    pv.id_empleado AS id_vendedor,
+    c.id_cliente,
+    c.tipo_documento || '-' || c.num_documento AS documento_cliente,
+    c.nombre_completo AS cliente,
+    pv.total_registrado AS valor_total_pedido,
+    COALESCE(
+        SUM(CASE WHEN p.estado = 'aprobado' THEN p.valor ELSE 0 END),
+        0.00
+    ) AS total_recaudado,
+    (
+        pv.total_registrado
+        - COALESCE(
+            SUM(CASE WHEN p.estado = 'aprobado' THEN p.valor ELSE 0 END),
+            0.00
+        )
+    ) AS saldo_pendiente,
+    CASE
+        WHEN COALESCE(
+            SUM(CASE WHEN p.estado = 'aprobado' THEN p.valor ELSE 0 END),
+            0.00
+        ) >= pv.total_registrado
+            THEN 'PAGADO TOTAL'
+        WHEN COALESCE(
+            SUM(CASE WHEN p.estado = 'aprobado' THEN p.valor ELSE 0 END),
+            0.00
+        ) > 0
+            THEN 'PAGO PARCIAL'
+        ELSE 'PENDIENTE DE PAGO'
+    END AS estado_cartera,
+    pv.estado AS estado_pedido
+FROM pedidos_venta pv
+JOIN clientes c
+    ON pv.id_cliente = c.id_cliente
+LEFT JOIN pagos p
+    ON pv.id_pedido = p.id_pedido
+GROUP BY
+    pv.id_pedido,
+    pv.fecha_pedido,
+    pv.id_sede,
+    pv.id_almacen,
+    pv.id_empleado,
+    c.id_cliente,
+    c.tipo_documento,
+    c.num_documento,
+    c.nombre_completo,
+    pv.total_registrado,
+    pv.estado;
+```
+
+**`v_devoluciones_impacto_ventas`.** Muestra cada producto devuelto con su devolución, pedido y cliente, la condición del producto y el impacto monetario calculado con el precio unitario del pedido.
+
+```sql
+-- Vista 3.2: v_devoluciones_impacto_ventas
+CREATE OR REPLACE VIEW v_devoluciones_impacto_ventas AS
+SELECT
+    d.id_devolucion,
+    d.fecha_solicitud,
+    d.estado AS estado_devolucion,
+    d.motivo,
+    pv.id_pedido,
+    pv.fecha_pedido,
+    c.id_cliente,
+    c.nombre_completo AS cliente,
+    dd.id_producto,
+    dd.cantidad AS cantidad_devuelta,
+    dd.condicion_producto,
+    dp.precio_unitario,
+    (dd.cantidad * dp.precio_unitario) AS impacto_monetario_devolucion
+FROM devoluciones d
+JOIN pedidos_venta pv
+    ON d.id_pedido = pv.id_pedido
+JOIN clientes c
+    ON pv.id_cliente = c.id_cliente
+JOIN detalle_devolucion dd
+    ON d.id_devolucion = dd.id_devolucion
+LEFT JOIN detalle_pedido dp
+    ON pv.id_pedido = dp.id_pedido
+    AND dd.id_producto = dp.id_producto;
+```
+
+---
+
+## 6. Identidad (`identidad`)
+
+> Actúa como módulo de seguridad y administración de personal: empleados, cuentas de usuario y registro centralizado de auditoría de accesos.
+
+### 6.1 Creación de tablas (DDL)
+
+Se crea el esquema `identidad` con tres tablas: `empleados`, con documento único y cargo, `usuarios`, con una única cuenta por empleado y su hash de contraseña, y `auditoria_accesos`, que registra por usuario la fecha, la acción y el objeto consultado. Los roles de base de datos no se almacenan como columna de `usuarios`: se crean con `CREATE ROLE` y se asignan con `GRANT` y `REVOKE`.
+
+```sql
+--- creacion de tablas identidad ---
+
 CREATE SCHEMA IF NOT EXISTS identidad;
 
 CREATE TABLE IF NOT EXISTS identidad.empleados (
@@ -964,11 +1126,14 @@ CREATE TABLE IF NOT EXISTS identidad.auditoria_accesos (
 );
 ```
 
-Se realiza la carga inicial de datos para empleados de distintas sedes, credenciales cifradas y eventos de auditoría.
-Se reinician las secuencias de identidad correspondientes para asegurar la continuidad numérica de los registros.
-Se simulan múltiples eventos de acceso y acciones sobre recursos del sistema en un rango de fechas específico.
+### 6.2 Inserción de datos (DML)
+
+Se vacían las tablas y se insertan 20 empleados de las cuatro sedes, 18 cuentas de usuario cuyo hash se calcula con `sha256` (solo como ejemplo de prueba) y 40 eventos de auditoría entre julio y octubre de 2026. Dos empleados quedan sin cuenta de usuario; al final se sincronizan las secuencias de identidad y se confirma con `COMMIT`.
 
 ```sql
+--- adición de datos identidad ---
+
+
 TRUNCATE identidad.auditoria_accesos, identidad.usuarios, identidad.empleados RESTART IDENTITY;
 
 -- ------------------------------ empleados ------------------------------
@@ -996,6 +1161,7 @@ OVERRIDING SYSTEM VALUE VALUES
 (20, 4, '1020304020', 'Johana Milena Acosta Prieto',     'Vendedor',                               'jacosta@distribuidora.example',   'activo');
 
 -- ------------------------------ usuarios -------------------------------
+-- password_hash = SHA-256 de '<usuario>:prueba2026' (ejemplo; en un sistema real, bcrypt o argon2 con sal).
 INSERT INTO identidad.usuarios (id_usuario, id_empleado, nombre_usuario, password_hash, estado, fecha_creacion)
 OVERRIDING SYSTEM VALUE
 SELECT v.id_usuario, v.id_empleado, v.nombre_usuario,
@@ -1023,6 +1189,7 @@ FROM (VALUES
 ) AS v(id_usuario, id_empleado, nombre_usuario, estado, fecha_creacion);
 
 -- ----------------------------- auditoría -------------------------------
+-- 40 eventos entre el 1 de julio y el 30 de octubre de 2026, en orden cronológico.
 INSERT INTO identidad.auditoria_accesos (id_usuario, fecha_hora, accion, objeto_consultado) VALUES
 (1,  '2026-07-01 08:05', 'LOGIN',  'identidad.usuarios'),
 (1,  '2026-07-01 08:20', 'INSERT', 'identidad.empleados'),
@@ -1071,38 +1238,61 @@ SELECT setval(pg_get_serial_sequence('identidad.usuarios',  'id_usuario'),  (SEL
 COMMIT;
 ```
 
-Se ejecutan consultas de conteo, distribución de personal y revisión del registro de auditoría.
-- Muestra el conteo de empleados, cuentas de usuario y registros en la bitácora de auditoría.
-- Muestra los empleados vinculados a procesos de compras e inventarios.
-- Muestra la distribución y conteo de empleados organizados por sede.
-- Muestra el conteo de personal agrupado según su cargo corporativo.
-- Muestra los empleados que actualmente no disponen de cuenta de usuario asignada.
-- Muestra las estadísticas resumidas y rangos de fechas del registro histórico de auditoría de accesos.
-- Valida restricciones de unicidad de cuentas, llaves foráneas y estados de empleados.
+### 6.3 Vistas y consultas
+
+**Conteos.** Muestra cuántas filas hay en `empleados`, `usuarios` y `auditoria_accesos`.
 
 ```sql
+--- pruebas de consultas identidad ---
+
+
 -- Conteos.
 SELECT 'empleados' AS tabla, count(*) AS filas FROM identidad.empleados
 UNION ALL SELECT 'usuarios', count(*) FROM identidad.usuarios
 UNION ALL SELECT 'auditoria_accesos', count(*) FROM identidad.auditoria_accesos;
+```
 
+**Empleados usados por compras e inventarios.** Muestra id, nombre, cargo y sede de los empleados 10 y 11.
+
+```sql
 -- Empleados que ya usan compras e inventarios
 SELECT id_empleado, nombre_completo, cargo, id_sede FROM identidad.empleados WHERE id_empleado IN (10, 11) ORDER BY id_empleado;
+```
 
+**Empleados por sede.** Cuenta cuántos empleados hay en cada sede.
+
+```sql
 -- Empleados por sede 
-SELECT id_sede, count(*) AS empleados FROM identidad.empleados GROUP BY id_sede ORDER BY id_sede;
 
+SELECT id_sede, count(*) AS empleados FROM identidad.empleados GROUP BY id_sede ORDER BY id_sede;
+```
+
+**Empleados por cargo.** Cuenta cuántos empleados hay por cada cargo.
+
+```sql
 -- Empleados por cargo.
 SELECT cargo, count(*) FROM identidad.empleados GROUP BY cargo ORDER BY cargo;
+```
 
+**Empleados sin cuenta de usuario.** Lista los empleados que no tienen ninguna cuenta de usuario asociada.
+
+```sql
 -- Empleados sin cuenta de usuario
 SELECT e.id_empleado, e.nombre_completo FROM identidad.empleados e
 WHERE NOT EXISTS (SELECT 1 FROM identidad.usuarios u WHERE u.id_empleado = e.id_empleado) ORDER BY e.id_empleado;
+```
 
+**Auditoría.** Cuenta los eventos por tipo de acción y muestra la fecha del primer y del último evento registrado.
+
+```sql
 -- Auditoría. 
 SELECT accion, count(*) FROM identidad.auditoria_accesos GROUP BY accion ORDER BY accion;
 SELECT min(fecha_hora) AS primera, max(fecha_hora) AS ultima FROM identidad.auditoria_accesos;
+```
 
+**Pruebas de restricciones.** Ejecuta cuatro sentencias que violan a propósito las restricciones `UNIQUE`, la llave foránea y un `CHECK`, y que deben terminar en error.
+
+```sql
 -- Pruebas de restricciones 
 INSERT INTO identidad.usuarios (id_empleado, nombre_usuario, password_hash, estado) VALUES (1, 'otro', 'x', 'activo');   -- UNIQUE (el empleado 1 ya tiene cuenta)
 INSERT INTO identidad.usuarios (id_empleado, nombre_usuario, password_hash, estado) VALUES (999, 'fantasma', 'x', 'activo'); -- FK (empleado inexistente)
