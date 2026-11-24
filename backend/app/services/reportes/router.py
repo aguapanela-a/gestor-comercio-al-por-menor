@@ -1,3 +1,3 @@
-from fastapi import APIRouter
+from app.services.reportes.infraestructura.adaptadores_entrada import GetViewInAdapter
 
-router = APIRouter()
+router = GetViewInAdapter().router
