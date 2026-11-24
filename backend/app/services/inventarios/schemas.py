@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 TransferState = Literal["solicitada", "despachada", "completada", "cancelada"]
@@ -22,6 +22,58 @@ class StockMinimumUpdate(BaseModel):
     id_almacen: int = Field(gt=0)
     id_producto: int = Field(gt=0)
     stock_minimo: int = Field(ge=0)
+
+
+class StockAdjustment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_almacen: int = Field(gt=0)
+    id_producto: int = Field(gt=0)
+    existencia_objetivo: int = Field(ge=0)
+
+
+class TransferItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad_enviada: int = Field(gt=0)
+
+
+class TransferCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_almacen_origen: int = Field(gt=0)
+    id_almacen_destino: int = Field(gt=0)
+    productos: list[TransferItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_transfer(self) -> "TransferCreate":
+        if self.id_almacen_origen == self.id_almacen_destino:
+            raise ValueError("Los almacenes deben ser diferentes")
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self
+
+
+class TransferReceiptItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad_total_recibida: int = Field(ge=0)
+
+
+class TransferReceiptCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    productos: list[TransferReceiptItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique_products(self) -> "TransferReceiptCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self
 
 
 class TransferResponse(BaseModel):

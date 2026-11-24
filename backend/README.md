@@ -64,9 +64,9 @@ rutas públicas son las de salud y `POST /auth/login`.
 | Identidad | `POST /auth/login`, `GET /auth/me`, `POST /auth/password`, `GET /auth/audit`; CRUD protegido de `/employees` y `/users` (DELETE inactiva, no elimina físicamente). |
 | Catálogo | CRUD protegido de `/categories` y `/products` (DELETE inactiva). Los listados aceptan filtros y paginación. |
 | Organización | CRUD protegido de `/sedes` y `/warehouses` (DELETE inactiva). Los listados aceptan filtros y paginación. |
-| Compras | CRUD protegido de `/suppliers`; lectura de `/product-suppliers`, `/purchase-orders` y `/receipts`; cancelación de órdenes pendientes. |
-| Inventarios | Lectura de `/stock`, alertas en `/stock/alerts`, actualización de `/stock/minimum` y lectura de `/transfers` y sus detalles. |
-| Ventas | CRUD protegido de `/customers` (DELETE inactiva); lectura de `/orders` y sus detalles, pagos y devoluciones. Los pedidos se consultan desde sus cuatro fragmentos operativos. |
+| Compras | CRUD protegido de `/suppliers`; lectura de `/product-suppliers`, `/purchase-orders` y `/receipts`; `POST /purchase-orders`, recepción acumulada en `POST /receipts/purchase-orders/{id_orden_compra}` y cancelación de órdenes pendientes. |
+| Inventarios | Lectura de `/stock`, alertas en `/stock/alerts`, actualización de mínimos, ajuste absoluto en `POST /stock/adjustments`, creación/consulta de `/transfers`, despacho, recepción acumulada y cancelación de transferencias solicitadas. |
+| Ventas | CRUD protegido de `/customers` (DELETE inactiva); creación y consulta de `/orders` y sus detalles; registro de pagos, consulta de `/orders/{id_pedido}/balance`, y solicitud, consulta, aprobación y rechazo de devoluciones. Los pedidos se consultan desde sus cuatro fragmentos operativos. |
 
 Los filtros de listados admiten paginación con `limit` entre 1 y 100 y `offset`
 entre 0 y 100000. Los detalles individuales responden 404 cuando el recurso no
@@ -114,12 +114,26 @@ usuario. Las URLs se configuran con `IDENTIDAD_SERVICE_URL`,
 `INVENTARIOS_SERVICE_URL` y `VENTAS_SERVICE_URL`; el timeout se controla con
 `SERVICE_HTTP_TIMEOUT_SECONDS`.
 
-### Operaciones pendientes
+### Límites de consistencia e idempotencia
 
-No se implementaron escrituras de órdenes/recepciones de Compras, movimientos y
-transferencias de Inventarios, ni creación de pedidos, pagos y devoluciones de
-Ventas. Esas operaciones requieren idempotencia durable y consistencia ante
-reintentos entre servicios; las tablas existentes no proporcionan claves ni
-registros persistentes para ello. No se simulan transacciones distribuidas ni se
-declaran exitosas esas operaciones. Reportes permanece fuera del alcance de este
-backend y no se modificó.
+Las escrituras dentro de cada servicio son transaccionales. El despacho bloquea
+la transferencia y las existencias antes de descontar; la recepción de una
+transferencia y la recepción de una orden aceptan cantidades acumuladas, por lo
+que reenviar el mismo total no repite el movimiento. Los ajustes de stock fijan
+una existencia objetivo, no aplican un delta. Las operaciones de escritura
+limitan el bloqueo de filas a 3 segundos y cada sentencia a 15 segundos; las
+llamadas HTTP a servicios propietarios usan `SERVICE_HTTP_TIMEOUT_SECONDS`.
+
+El esquema no contiene claves de idempotencia ni un diario de movimientos. Por
+eso, la creación de pedidos/órdenes, pagos y solicitudes de devolución puede
+duplicarse si el cliente reintenta una petición cuyo resultado quedó ambiguo.
+No se declara idempotencia durable para esas escrituras. Tampoco existe una
+transacción atómica entre servicios: Compras registra recepciones localmente
+pero no actualiza Inventarios; Ventas consulta existencias al crear un pedido,
+pero no las reserva/descuenta; aprobar una devolución tampoco repone stock.
+Garantizar esos efectos cruzados requiere persistencia de operaciones/reintentos
+o un mecanismo de reserva compartido, que no existe en el esquema actual.
+
+Inventarios no tiene una tabla de movimientos: el historial consultable se
+limita a transferencias, y los ajustes solo actualizan la existencia actual.
+Reportes permanece fuera del alcance y no se modificó.

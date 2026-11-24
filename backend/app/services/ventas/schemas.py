@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 SalesState = Literal["activo", "inactivo"]
@@ -61,11 +61,45 @@ class OrderResponse(BaseModel):
     total_registrado: Decimal
 
 
+class OrderBalanceResponse(BaseModel):
+    id_pedido: int
+    total_registrado: Decimal
+    total_pagado: Decimal
+    saldo_pendiente: Decimal
+
+
 class OrderDetailResponse(BaseModel):
     id_pedido: int
     id_producto: int
     cantidad: int
     precio_unitario: Decimal
+
+
+class OrderItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad: int = Field(gt=0)
+
+
+class OrderCreate(SalesInput):
+    id_sede: int = Field(ge=1, le=4)
+    id_almacen: int = Field(gt=0)
+    id_cliente: int = Field(gt=0)
+    id_empleado: int = Field(gt=0)
+    productos: list[OrderItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique_products(self) -> "OrderCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self
+
+
+class PaymentCreate(SalesInput):
+    valor: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    medio_pago: PaymentMethod
 
 
 class PaymentResponse(BaseModel):
@@ -90,3 +124,23 @@ class ReturnDetailResponse(BaseModel):
     id_producto: int
     cantidad: int
     condicion_producto: ProductCondition
+
+
+class ReturnItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad: int = Field(gt=0)
+    condicion_producto: ProductCondition
+
+
+class ReturnCreate(SalesInput):
+    motivo: str = Field(min_length=1, max_length=200)
+    productos: list[ReturnItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique_products(self) -> "ReturnCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self

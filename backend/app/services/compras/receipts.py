@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.services.compras.dependencies import get_compras_db
@@ -8,14 +9,54 @@ from app.services.compras.repositories import (
     get_receipt,
     list_receipt_details,
     list_receipts,
+    register_purchase_receipt,
 )
 from app.services.compras.schemas import (
+    PurchaseReceiptCreate,
+    PurchaseReceiptRegistrationResponse,
     ReceiptDetailResponse,
     ReceiptResponse,
     ReceiptState,
 )
+from app.shared.transactions import set_local_transaction_timeouts
 
 router = APIRouter(prefix="/receipts", tags=["Recepciones"])
+
+
+@router.post(
+    "/purchase-orders/{id_orden_compra}",
+    response_model=PurchaseReceiptRegistrationResponse,
+)
+def add_purchase_receipt(
+    id_orden_compra: Annotated[int, Path(gt=0)],
+    data: PurchaseReceiptCreate,
+    response: Response,
+    db: Session = Depends(get_compras_db),
+) -> PurchaseReceiptRegistrationResponse:
+    try:
+        set_local_transaction_timeouts(db)
+        row = register_purchase_receipt(
+            db,
+            id_orden_compra=id_orden_compra,
+            received_totals={
+                item.id_producto: item.cantidad_total_recibida
+                for item in data.productos
+            },
+        )
+        if row is None:
+            db.rollback()
+            raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+        db.commit()
+    except ValueError as error:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No fue posible registrar la recepción") from None
+    response.status_code = (
+        status.HTTP_201_CREATED if row["cantidades_actualizadas"] else status.HTTP_200_OK
+    )
+    return PurchaseReceiptRegistrationResponse.model_validate(row)
 
 
 @router.get("", response_model=list[ReceiptResponse])

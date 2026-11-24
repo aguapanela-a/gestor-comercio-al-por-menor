@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 PurchaseState = Literal[
@@ -69,6 +69,54 @@ class PurchaseOrderResponse(BaseModel):
     fecha_orden: datetime
     fecha_estimada: date | None
     estado: PurchaseState
+
+
+class PurchaseOrderItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad_solicitada: int = Field(gt=0)
+
+
+class PurchaseOrderCreate(PurchaseInput):
+    id_proveedor: int = Field(gt=0)
+    id_almacen_destino: int = Field(gt=0)
+    id_empleado_creador: int = Field(gt=0)
+    fecha_estimada: date
+    productos: list[PurchaseOrderItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique_products(self) -> "PurchaseOrderCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self
+
+
+class PurchaseReceiptItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad_total_recibida: int = Field(gt=0)
+
+
+class PurchaseReceiptCreate(PurchaseInput):
+    productos: list[PurchaseReceiptItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique_products(self) -> "PurchaseReceiptCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self
+
+
+class PurchaseReceiptRegistrationResponse(BaseModel):
+    id_recepcion: int | None
+    id_orden_compra: int
+    fecha_recepcion: datetime | None
+    estado: ReceiptState
+    cantidades_actualizadas: bool
 
 
 class ReceiptResponse(BaseModel):

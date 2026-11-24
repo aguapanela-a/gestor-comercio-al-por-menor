@@ -1,15 +1,24 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.services.inventarios.dependencies import get_inventarios_db
-from app.services.inventarios.repositories import list_inventory, update_stock_minimum
-from app.services.inventarios.schemas import InventoryResponse, StockMinimumUpdate
+from app.services.inventarios.repositories import (
+    adjust_inventory,
+    list_inventory,
+    update_stock_minimum,
+)
+from app.services.inventarios.schemas import (
+    InventoryResponse,
+    StockAdjustment,
+    StockMinimumUpdate,
+)
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
+from app.shared.transactions import set_local_transaction_timeouts
 
 router = APIRouter(
     prefix="/stock",
@@ -24,7 +33,8 @@ def _validate_remote_resource(
     path: str,
     expected_id: int,
     id_field: str,
-) -> None:
+    require_active: bool = False,
+) -> dict:
     authorization = request.headers.get("authorization", "")
     scheme, _, bearer_token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not bearer_token:
@@ -45,6 +55,9 @@ def _validate_remote_resource(
         ) from None
     if not isinstance(resource, dict) or resource.get(id_field) != expected_id:
         raise HTTPException(status_code=502, detail=f"Respuesta inválida de {service}")
+    if require_active and resource.get("estado") != "activo":
+        raise HTTPException(status_code=422, detail=f"La referencia no está activa en {service}")
+    return resource
 
 
 @router.get("", response_model=list[InventoryResponse])
@@ -67,6 +80,48 @@ def read_stock(
         offset=offset,
     )
     return [InventoryResponse.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/adjustments",
+    response_model=InventoryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_stock_quantity(
+    data: StockAdjustment,
+    request: Request,
+    db: Session = Depends(get_inventarios_db),
+) -> InventoryResponse:
+    _validate_remote_resource(
+        request,
+        "catalogo",
+        f"/products/{data.id_producto}",
+        data.id_producto,
+        "id_producto",
+        require_active=True,
+    )
+    warehouse = _validate_remote_resource(
+        request,
+        "organizacion",
+        f"/warehouses/{data.id_almacen}",
+        data.id_almacen,
+        "id_almacen",
+        require_active=True,
+    )
+    try:
+        set_local_transaction_timeouts(db)
+        row = adjust_inventory(
+            db,
+            id_almacen=data.id_almacen,
+            id_producto=data.id_producto,
+            id_sede=warehouse["id_sede"],
+            existencia_objetivo=data.existencia_objetivo,
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No fue posible ajustar las existencias") from None
+    return InventoryResponse.model_validate(row)
 
 
 @router.patch("/minimum", response_model=InventoryResponse)
