@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -52,6 +53,14 @@ class Settings(BaseSettings):
     jwt_secret_key: str | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+
+    identidad_service_url: str = "http://127.0.0.1:8001"
+    catalogo_service_url: str = "http://127.0.0.1:8002"
+    organizacion_service_url: str = "http://127.0.0.1:8003"
+    compras_service_url: str = "http://127.0.0.1:8004"
+    inventarios_service_url: str = "http://127.0.0.1:8005"
+    ventas_service_url: str = "http://127.0.0.1:8006"
+    service_http_timeout_seconds: float = Field(default=3.0, gt=0)
 
 
 settings = Settings()

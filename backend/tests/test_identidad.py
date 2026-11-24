@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.core.security import verify_password
+from app.core.security import create_access_token, verify_password
 from app.services.identidad.dependencies import get_identity_db
 from app.services.identidad.main import app
 
@@ -133,3 +133,35 @@ def test_login_migrates_legacy_hash_after_success(
 
 def test_identity_health(assert_health_endpoints) -> None:
     assert_health_endpoints(app, "identidad")
+
+
+def test_current_user_returns_only_profile_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret_key", "identity-test-signing-key")
+    db = FakeDatabaseSession(
+        {
+            "id_usuario": 1,
+            "id_empleado": 2,
+            "nombre_usuario": "demo",
+            "estado_usuario": "activo",
+            "nombre_completo": "Usuario de prueba",
+            "cargo": "Prueba",
+            "id_sede": 1,
+            "correo": None,
+            "estado_empleado": "activo",
+        }
+    )
+    monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+    token = create_access_token({"sub": "1"})
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["nombre_usuario"] == "demo"
+    assert "password_hash" not in response.json()
+    assert "estado_usuario" not in response.json()

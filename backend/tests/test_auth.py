@@ -54,6 +54,20 @@ def test_invalid_access_token_is_rejected(monkeypatch: pytest.MonkeyPatch) -> No
         decode_access_token(token + "x")
 
 
+def test_access_token_without_expiration_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret_key", "test-only-signing-key")
+    token = jwt.encode(
+        {"sub": "123"},
+        "test-only-signing-key",
+        algorithm="HS256",
+    )
+
+    with pytest.raises(JWTError):
+        decode_access_token(token)
+
+
 def test_bearer_dependency_protects_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -67,6 +81,15 @@ def test_bearer_dependency_protects_endpoint(
     with TestClient(app) as client:
         assert client.get("/private").status_code == 401
         token = create_access_token({"sub": "123"})
+        no_exp_token = jwt.encode(
+            {"sub": "123"},
+            "test-only-signing-key",
+            algorithm="HS256",
+        )
+        assert client.get(
+            "/private",
+            headers={"Authorization": f"Bearer {no_exp_token}"},
+        ).status_code == 401
         response = client.get(
             "/private",
             headers={"Authorization": f"Bearer {token}"},
