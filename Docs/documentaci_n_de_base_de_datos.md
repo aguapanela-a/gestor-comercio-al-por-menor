@@ -812,22 +812,27 @@ CREATE TABLE clientes (
 
 
 -- 2. PEDIDOS DE VENTA (Sede / Almacén / Empleado son FKL)
-CREATE TABLE pedidos_venta (
-    id_pedido       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    id_sede         INT NOT NULL,
-    -- FKL a organizacion_db.sedes
-    id_almacen      INT NOT NULL,
-    -- FKL a organizacion_db.almacenes
-    id_cliente      INT NOT NULL
-        CONSTRAINT fk_pedido_cliente REFERENCES clientes(id_cliente),
-    id_empleado     INT NOT NULL,
-    -- FKL a identidad_db.empleados
-    fecha_pedido    DATE NOT NULL DEFAULT CURRENT_DATE,
-    estado          VARCHAR(15) NOT NULL DEFAULT 'pendiente'
+-- =============================================================================
+-- ventas_db · Tabla madre particionada por LISTA (id_sede)
+-- Requiere que la tabla ventas.clientes exista previamente.
+-- =============================================================================
+CREATE SCHEMA IF NOT EXISTS ventas;
+
+CREATE TABLE ventas.pedidos_venta (
+    id_pedido        INT           GENERATED ALWAYS AS IDENTITY,
+    id_sede          INT           NOT NULL,   -- Clave de partición (FKL a organizacion.sedes)
+    id_almacen       INT           NOT NULL,   -- FKL a organizacion.almacenes
+    id_cliente       INT           NOT NULL
+        CONSTRAINT fk_pedido_cliente REFERENCES ventas.clientes (id_cliente),
+    id_empleado      INT           NOT NULL,   -- FKL a identidad.empleados
+    fecha_pedido     DATE          NOT NULL DEFAULT CURRENT_DATE,
+    estado           VARCHAR(15)   NOT NULL DEFAULT 'pendiente'
         CHECK (estado IN ('pendiente', 'completado', 'cancelado', 'devolucion')),
     total_registrado NUMERIC(14,2) NOT NULL DEFAULT 0.00
-        CHECK (total_registrado >= 0)
-);
+        CHECK (total_registrado >= 0),
+    -- La PK de una tabla particionada debe incluir la clave de partición
+    CONSTRAINT pk_pedidos_venta PRIMARY KEY (id_pedido, id_sede)
+) PARTITION BY LIST (id_sede);
 
 
 -- 3. DETALLE DE PEDIDO
