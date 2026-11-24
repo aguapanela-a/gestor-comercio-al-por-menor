@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS catalogo.productos (
 
 ### 1.2 Inserción de datos (DML)
 
-Se vacían las tablas con `TRUNCATE ... RESTART IDENTITY` y se insertan 9 categorías y 85 productos, fijando los id con `OVERRIDING SYSTEM VALUE`. Los productos 1 a 80 son artículos de consumo masivo (algunos inactivos) y los productos 101 a 105 son los que ya usan compras e inventarios. Al final, `setval` sincroniza las secuencias de identidad con el mayor id insertado.
+Se vacían las tablas con `TRUNCATE ... RESTART IDENTITY` y se insertan 9 categorías y 85 productos, fijando los id con `OVERRIDING SYSTEM VALUE`. Los productos 1 a 80 son artículos de consumo masivo (algunos inactivos) y los productos 101 a 105 son los que ya usan compras e . Al final, `setval` sincroniza las secuencias de identidad con el mayor id insertado.
 
 ```sql
 --- generación de datos catalogo ---
@@ -164,7 +164,7 @@ OVERRIDING SYSTEM VALUE VALUES
 (78, 'CUI-ESP-AFE-250',  'Espuma de afeitar 250 ml',    6, 'unidad', 11900.00, 'activo'),
 (79, 'CUI-TOA-20',       'Toallas higiénicas x20',      6, 'paquete', 8900.00, 'activo'),
 (80, 'CUI-ENJ-250',      'Enjuague bucal 250 ml',       6, 'unidad',  9600.00, 'inactivo'),
--- Productos que ya usan compras e inventarios
+-- Productos que ya usan compras e 
 (101, 'TEC-TEC-RGB',     'Teclado Mecánico RGB',        8, 'unidad',   189900.00, 'activo'),
 (102, 'TEC-MON-27-144',  'Monitor Gamer 27" 144Hz',     8, 'unidad',  1199900.00, 'activo'),
 (103, 'BEB-PAC-ENE-6',   'Pack de Bebidas Energizantes',4, 'paquete',   36900.00, 'activo'),
@@ -624,16 +624,18 @@ Se crean tres tablas: `inventarios`, con la existencia actual y el stock mínimo
 
 ```sql
 -- 1. INVENTARIOS (Existencias de productos por almacén)
-CREATE TABLE inventarios (
-    id_almacen	      	INT,				-- Referencia lógica a catalogo_db
-    id_producto         INT 		NOT NULL,		-- Referencia lógica a catalogo_db
-    id_sede				INT 		not null,		-- Referencia lógica a catalogo_db
-    existencia_actual   INT 		NOT NULL DEFAULT 0	 CONSTRAINT chk_existencia_no_negativa CHECK (existencia_actual >= 0),
-    stock_minimo        INT 		NOT NULL DEFAULT 10	CONSTRAINT chk_stock_min_no_negativo CHECK (stock_minimo >= 0),
-    fecha_actualizacion TIMESTAMP 	NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT uk_almacen_producto UNIQUE (id_almacen, id_producto)
-);
+CREATE TABLE inventarios.inventarios (
+    id_sede             INT        NOT NULL,   -- Clave de partición (FKL a organizacion.sedes)
+    id_almacen          INT        NOT NULL,   -- FKL a organizacion.almacenes
+    id_producto         INT        NOT NULL,   -- FKL a catalogo.productos
+    existencia_actual   INT        NOT NULL DEFAULT 0
+        CONSTRAINT chk_existencia_no_negativa CHECK (existencia_actual >= 0),
+    stock_minimo        INT        NOT NULL DEFAULT 10
+        CONSTRAINT chk_stock_min_no_negativo  CHECK (stock_minimo >= 0),
+    fecha_actualizacion TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- La PK de una tabla particionada debe incluir la clave de partición
+    CONSTRAINT pk_inventarios PRIMARY KEY (id_sede, id_almacen, id_producto)
+) PARTITION BY LIST (id_sede);
 
 
 -- 2. TRANSFERENCIAS (Movimientos de stock entre sedes/almacenes)
