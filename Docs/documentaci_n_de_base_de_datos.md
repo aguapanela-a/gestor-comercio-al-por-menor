@@ -836,21 +836,20 @@ CREATE TABLE ventas.pedidos_venta (
 
 
 -- 3. DETALLE DE PEDIDO
-CREATE TABLE detalle_pedido (
-    id_pedido       INT NOT NULL
-        CONSTRAINT fk_detpedido_pedido
-        REFERENCES pedidos_venta(id_pedido)
-        ON DELETE CASCADE,
-    id_producto     INT NOT NULL,
-    -- FKL a catalogo_db.productos
-    cantidad        INT NOT NULL CHECK (cantidad > 0),
+CREATE TABLE ventas.detalle_pedido (
+    id_pedido       INT           NOT NULL,
+    id_sede         INT           NOT NULL,   -- Se propaga para poder referenciar la PK compuesta
+    id_producto     INT           NOT NULL,   -- FKL a catalogo.productos
+    cantidad        INT           NOT NULL CHECK (cantidad > 0),
     precio_unitario NUMERIC(12,2) NOT NULL CHECK (precio_unitario >= 0),
-    PRIMARY KEY (id_pedido, id_producto)
+    PRIMARY KEY (id_pedido, id_producto),
+    CONSTRAINT fk_detpedido_pedido FOREIGN KEY (id_pedido, id_sede)
+        REFERENCES ventas.pedidos_venta (id_pedido, id_sede) ON DELETE CASCADE
 );
 
 
 -- 4. PAGOS
-CREATE TABLE pagos (
+CREATE TABLE ventas.pagos (
     id_pago     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_pedido   INT NOT NULL
         CONSTRAINT fk_pago_pedido REFERENCES pedidos_venta(id_pedido),
@@ -876,7 +875,7 @@ CREATE TABLE devoluciones (
 
 
 -- 6. DETALLE DE DEVOLUCION
-CREATE TABLE detalle_devolucion (
+CREATE TABLE ventas.detalle_devolucion (
     id_devolucion       INT NOT NULL
         CONSTRAINT fk_detdev_devolucion
         REFERENCES devoluciones(id_devolucion)
@@ -920,7 +919,7 @@ VALUES
 
 -- Pedidos_venta
 -- id_sede e id_almacen refieren a organizacion_db | id_empleado refiere a identidad_db
-INSERT INTO pedidos_venta (
+INSERT INTO ventas.pedidos_venta (
     id_sede,
     id_almacen,
     id_cliente,
@@ -938,18 +937,19 @@ VALUES
 
 -- Detalle_pedido
 -- id_producto refiere a catalogo_db
-INSERT INTO detalle_pedido (
+INSERT INTO ventas.detalle_pedido (
     id_pedido,
+    id_sede,
     id_producto,
     cantidad,
     precio_unitario
 )
 VALUES
-    (1, 101, 2, 170000.00),  -- Pedido 1: 2 Teclados Mecánicos
-    (1, 102, 1, 1250000.00), -- Pedido 1: 1 Monitor Gamer 27"
-    (2, 103, 100, 3500.00),  -- Pedido 2: 100 Bebidas Energizantes
-    (3, 101, 3, 200000.00),  -- Pedido 3: 3 Teclados Mecánicos
-    (4, 104, 5, 36000.00);   -- Pedido 4: 5 Kits de Limpieza
+    (2, 1,101, 2, 170000.00),  -- Pedido 2: 2 Teclados Mecánicos
+    (2, 1,102, 1, 1250000.00), -- Pedido 2: 1 Monitor Gamer 27"
+    (3, 2,103, 100, 3500.00),  -- Pedido 3: 100 Bebidas Energizantes
+    (4, 1,101, 3, 200000.00),  -- Pedido 4: 3 Teclados Mecánicos
+    (5, 3,104, 5, 36000.00);   -- Pedido 5: 5 Kits de Limpieza
 
 
 -- Pagos
