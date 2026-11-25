@@ -325,6 +325,9 @@ tbody tr:hover { background: #fbfcfc; }
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 9px;
+  max-height: 440px;
+  overflow-y: auto;
+  align-content: start;
 }
 
 .report-option {

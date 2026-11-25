@@ -1,6 +1,27 @@
 API de reportes
 Base URL local: http://127.0.0.1:8007
-Todos los endpoints usan GET y responden con un arreglo JSON. Los valores son ejemplos.
+Todos los endpoints usan GET y responden con un arreglo JSON. Los valores de filas son ejemplos.
+
+Catálogo dinámico:
+
+GET /vistas
+Devuelve todas las vistas ordinarias autorizadas del esquema reportes, sin paginación
+ni límite de cantidad. Cada elemento contiene name, schema, label, description y
+columns. Las columnas incluyen name, type, nullable y description.
+
+GET /vistas/{view_name}
+Devuelve las filas de la vista autorizada. view_name debe existir en reportes y ser
+consultable por el usuario PostgreSQL configurado para el servicio. Los nombres de
+esquema y las consultas SQL no se aceptan desde el cliente.
+
+Ejemplo de elemento del catálogo (los metadatos exactos dependen de PostgreSQL):
+{
+  "name": "vista_inventario_por_sede",
+  "schema": "reportes",
+  "label": "Inventario por sede",
+  "description": null,
+  "columns": []
+}
 
 1. GET /vista_inventario_por_sede
 [

@@ -14,4 +14,4 @@ En desarrollo, las llamadas usan rutas `/api/{servicio}` y Vite las reenvía a l
 
 Configura las variables `VITE_*_API_URL` con las direcciones accesibles desde el navegador y asegúrate de que cada servicio permita el origen del frontend mediante CORS, o publica el frontend detrás de un reverse proxy/gateway que enrute las solicitudes a los servicios. El proxy de Vite solo se ejecuta en desarrollo.
 
-El servicio de Reportes se mantiene como punto de integración pendiente; esta aplicación no consulta ni modifica sus datos.
+La página de Reportes obtiene las vistas autorizadas desde el catálogo del servicio y refresca el catálogo y la vista seleccionada cada 30 segundos. El botón **Actualizar** solicita ambos de inmediato.

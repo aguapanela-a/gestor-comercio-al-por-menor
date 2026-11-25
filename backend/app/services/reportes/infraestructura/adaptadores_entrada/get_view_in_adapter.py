@@ -1,12 +1,18 @@
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from psycopg import Connection
 
 from app.services.reportes.aplicacion.puertos_entrada import InPortViews
 from app.services.reportes.infraestructura.adaptadores_entrada.dependencies import (
     get_use_case_views,
 )
+from app.services.reportes.infraestructura.adaptadores_salida.report_view_catalog import (
+    ReportViewCatalog,
+    ReportViewNotFound,
+)
+from app.services.reportes.infraestructura.configuracion import get_connection
 from app.services.reportes.nucleo.modelos import (
     VistaAlertasReabastecimiento,
     VistaComprasPendientes,
@@ -26,6 +32,18 @@ T = TypeVar("T")
 class GetViewInAdapter:
     def __init__(self) -> None:
         self.router = APIRouter(tags=["Reportes"])
+        self.router.add_api_route(
+            "/vistas",
+            self.get_vistas,
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            "/vistas/{view_name:path}",
+            self.get_vista_dinamica,
+            methods=["GET"],
+            response_model=None,
+        )
         self.router.add_api_route(
             "/vista_inventario_por_sede",
             self.get_vista_inventario_por_sede,
@@ -86,6 +104,24 @@ class GetViewInAdapter:
             methods=["GET"],
             response_model=None,
         )
+
+    def get_vistas(
+        self, connection: Connection[Any] = Depends(get_connection)
+    ) -> list[dict[str, Any]]:
+        return ReportViewCatalog(connection).list_views()
+
+    def get_vista_dinamica(
+        self,
+        view_name: str,
+        connection: Connection[Any] = Depends(get_connection),
+    ) -> list[dict[str, Any]]:
+        try:
+            return ReportViewCatalog(connection).get_view_rows(view_name)
+        except ReportViewNotFound as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="La vista no existe o no está autorizada para consulta.",
+            ) from error
 
     @staticmethod
     def _execute(operation: Callable[[], T]) -> T:

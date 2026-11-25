@@ -8,7 +8,7 @@ const services = {
   compras: 8004,
   inventarios: 8005,
   ventas: 8006,
-  reportes: 8007,
+  reportes: 8000,
 } as const
 
 export default defineConfig(({ mode }) => {

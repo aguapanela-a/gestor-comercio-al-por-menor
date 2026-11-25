@@ -1,12 +1,17 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.sql import Composed
 
 from app.services.reportes.aplicacion.useCases import UseCaseViews
 from app.services.reportes.infraestructura.adaptadores_entrada.dependencies import (
     get_use_case_views,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.report_view_catalog import (
+    REPORTS_SCHEMA,
 )
 from app.services.reportes.infraestructura.adaptadores_salida import (
     VistaAlertasReabastecimiento,
@@ -20,6 +25,7 @@ from app.services.reportes.infraestructura.adaptadores_salida import (
     VistaTransferenciasEnTransito,
     VistaVentasMensualesPorSede,
 )
+from app.services.reportes.infraestructura.configuracion import get_connection
 from app.services.reportes.main import app
 
 
@@ -267,3 +273,111 @@ def test_report_view_adapters_query_and_map_rows(
     cursor.execute.assert_called_once_with(
         f"SELECT * FROM reportes.{entity_name};"
     )
+
+
+def _report_catalog_row(name: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "schema_name": REPORTS_SCHEMA,
+        "description": None,
+        "columns": [
+            {
+                "name": "total",
+                "type": "numeric",
+                "nullable": True,
+                "description": None,
+            }
+        ],
+    }
+
+
+def _report_connection() -> tuple[MagicMock, MagicMock]:
+    cursor = MagicMock()
+    cursor.__enter__.return_value = cursor
+    connection = MagicMock()
+    connection.info.encoding = "utf-8"
+    connection.cursor.return_value = cursor
+    connection.escape_identifier.side_effect = lambda value: f'"{value}"'
+    return connection, cursor
+
+
+def test_report_catalog_returns_every_authorized_view_and_refreshes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection, cursor = _report_connection()
+    initial_views = [_report_catalog_row(f"vista_reporte_{index}") for index in range(15)]
+    updated_views = [*initial_views, _report_catalog_row("vista_reporte_nueva")]
+    cursor.fetchall.side_effect = [initial_views, updated_views]
+    monkeypatch.setitem(app.dependency_overrides, get_connection, lambda: connection)
+
+    with TestClient(app) as client:
+        first_response = client.get("/vistas")
+        second_response = client.get("/vistas")
+
+    assert first_response.status_code == 200
+    assert len(first_response.json()) == 15
+    assert first_response.json()[0] == {
+        "name": "vista_reporte_0",
+        "schema": REPORTS_SCHEMA,
+        "description": None,
+        "columns": initial_views[0]["columns"],
+        "label": "Reporte 0",
+    }
+    assert second_response.status_code == 200
+    assert len(second_response.json()) == 16
+    assert second_response.json()[-1]["name"] == "vista_reporte_nueva"
+    assert cursor.execute.call_count == 2
+
+    query, parameters = cursor.execute.call_args.args
+    assert parameters == (REPORTS_SCHEMA,)
+    assert "c.relkind = 'v'" in query
+    assert "has_schema_privilege" in query
+    assert "has_table_privilege" in query
+    assert "LIMIT" not in query.upper()
+
+
+def test_dynamic_report_endpoint_queries_authorized_view_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection, cursor = _report_connection()
+    cursor.fetchone.return_value = {"name": "vista_nueva"}
+    cursor.fetchall.return_value = [{"total": 123.45}]
+    cursor.description = [SimpleNamespace(name="total")]
+    monkeypatch.setitem(app.dependency_overrides, get_connection, lambda: connection)
+
+    with TestClient(app) as client:
+        response = client.get("/vistas/vista_nueva")
+
+    assert response.status_code == 200
+    assert response.json() == [{"total": 123.45}]
+    assert cursor.execute.call_count == 2
+    query = cursor.execute.call_args.args[0]
+    assert isinstance(query, Composed)
+    assert query._obj[1]._obj == ("reportes",)
+    assert query._obj[3]._obj == ("vista_nueva",)
+
+
+@pytest.mark.parametrize(
+    "view_name",
+    [
+        "vista_inexistente",
+        "public.vista_inventario_por_sede",
+        'vista_x"; DROP TABLE reportes.vista_inventario_por_sede;--',
+    ],
+)
+def test_dynamic_report_endpoint_rejects_unknown_schemas_and_injection(
+    view_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection, cursor = _report_connection()
+    cursor.fetchone.return_value = None
+    monkeypatch.setitem(app.dependency_overrides, get_connection, lambda: connection)
+
+    with TestClient(app) as client:
+        response = client.get(f"/vistas/{quote(view_name, safe='')}")
+
+    assert response.status_code == 404
+    assert cursor.execute.call_count == 1
+    query, parameters = cursor.execute.call_args.args
+    assert "c.relkind = 'v'" in query
+    assert parameters == (REPORTS_SCHEMA, view_name)
