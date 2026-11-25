@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS catalogo.productos (
 
 ### 1.2 Inserción de datos (DML)
 
-Se vacían las tablas con `TRUNCATE ... RESTART IDENTITY` y se insertan 9 categorías y 85 productos, fijando los id con `OVERRIDING SYSTEM VALUE`. Los productos 1 a 80 son artículos de consumo masivo (algunos inactivos) y los productos 101 a 105 son los que ya usan compras e inventarios. Al final, `setval` sincroniza las secuencias de identidad con el mayor id insertado.
+Se vacían las tablas con `TRUNCATE ... RESTART IDENTITY` y se insertan 9 categorías y 85 productos, fijando los id con `OVERRIDING SYSTEM VALUE`. Los productos 1 a 80 son artículos de consumo masivo (algunos inactivos) y los productos 101 a 105 son los que ya usan compras e . Al final, `setval` sincroniza las secuencias de identidad con el mayor id insertado.
 
 ```sql
 --- generación de datos catalogo ---
@@ -164,7 +164,7 @@ OVERRIDING SYSTEM VALUE VALUES
 (78, 'CUI-ESP-AFE-250',  'Espuma de afeitar 250 ml',    6, 'unidad', 11900.00, 'activo'),
 (79, 'CUI-TOA-20',       'Toallas higiénicas x20',      6, 'paquete', 8900.00, 'activo'),
 (80, 'CUI-ENJ-250',      'Enjuague bucal 250 ml',       6, 'unidad',  9600.00, 'inactivo'),
--- Productos que ya usan compras e inventarios
+-- Productos que ya usan compras e 
 (101, 'TEC-TEC-RGB',     'Teclado Mecánico RGB',        8, 'unidad',   189900.00, 'activo'),
 (102, 'TEC-MON-27-144',  'Monitor Gamer 27" 144Hz',     8, 'unidad',  1199900.00, 'activo'),
 (103, 'BEB-PAC-ENE-6',   'Pack de Bebidas Energizantes',4, 'paquete',   36900.00, 'activo'),
@@ -624,16 +624,18 @@ Se crean tres tablas: `inventarios`, con la existencia actual y el stock mínimo
 
 ```sql
 -- 1. INVENTARIOS (Existencias de productos por almacén)
-CREATE TABLE inventarios (
-    id_almacen	      	INT,				-- Referencia lógica a catalogo_db
-    id_producto         INT 		NOT NULL,		-- Referencia lógica a catalogo_db
-    id_sede				INT 		not null,		-- Referencia lógica a catalogo_db
-    existencia_actual   INT 		NOT NULL DEFAULT 0	 CONSTRAINT chk_existencia_no_negativa CHECK (existencia_actual >= 0),
-    stock_minimo        INT 		NOT NULL DEFAULT 10	CONSTRAINT chk_stock_min_no_negativo CHECK (stock_minimo >= 0),
-    fecha_actualizacion TIMESTAMP 	NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT uk_almacen_producto UNIQUE (id_almacen, id_producto)
-);
+CREATE TABLE inventarios.inventarios (
+    id_sede             INT        NOT NULL,   -- Clave de partición (FKL a organizacion.sedes)
+    id_almacen          INT        NOT NULL,   -- FKL a organizacion.almacenes
+    id_producto         INT        NOT NULL,   -- FKL a catalogo.productos
+    existencia_actual   INT        NOT NULL DEFAULT 0
+        CONSTRAINT chk_existencia_no_negativa CHECK (existencia_actual >= 0),
+    stock_minimo        INT        NOT NULL DEFAULT 10
+        CONSTRAINT chk_stock_min_no_negativo  CHECK (stock_minimo >= 0),
+    fecha_actualizacion TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- La PK de una tabla particionada debe incluir la clave de partición
+    CONSTRAINT pk_inventarios PRIMARY KEY (id_sede, id_almacen, id_producto)
+) PARTITION BY LIST (id_sede);
 
 
 -- 2. TRANSFERENCIAS (Movimientos de stock entre sedes/almacenes)
@@ -812,43 +814,49 @@ CREATE TABLE clientes (
 
 
 -- 2. PEDIDOS DE VENTA (Sede / Almacén / Empleado son FKL)
-CREATE TABLE pedidos_venta (
-    id_pedido       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    id_sede         INT NOT NULL,
-    -- FKL a organizacion_db.sedes
-    id_almacen      INT NOT NULL,
-    -- FKL a organizacion_db.almacenes
-    id_cliente      INT NOT NULL
-        CONSTRAINT fk_pedido_cliente REFERENCES clientes(id_cliente),
-    id_empleado     INT NOT NULL,
-    -- FKL a identidad_db.empleados
-    fecha_pedido    DATE NOT NULL DEFAULT CURRENT_DATE,
-    estado          VARCHAR(15) NOT NULL DEFAULT 'pendiente'
+-- =============================================================================
+-- ventas_db · Tabla madre particionada por LISTA (id_sede)
+-- Requiere que la tabla ventas.clientes exista previamente.
+-- =============================================================================
+CREATE SCHEMA IF NOT EXISTS ventas;
+
+CREATE TABLE ventas.pedidos_venta (
+    id_pedido        INT           GENERATED ALWAYS AS IDENTITY,
+    id_sede          INT           NOT NULL,   -- Clave de partición (FKL a organizacion.sedes)
+    id_almacen       INT           NOT NULL,   -- FKL a organizacion.almacenes
+    id_cliente       INT           NOT NULL
+        CONSTRAINT fk_pedido_cliente REFERENCES ventas.clientes (id_cliente),
+    id_empleado      INT           NOT NULL,   -- FKL a identidad.empleados
+    fecha_pedido     DATE          NOT NULL DEFAULT CURRENT_DATE,
+    estado           VARCHAR(15)   NOT NULL DEFAULT 'pendiente'
         CHECK (estado IN ('pendiente', 'completado', 'cancelado', 'devolucion')),
     total_registrado NUMERIC(14,2) NOT NULL DEFAULT 0.00
-        CHECK (total_registrado >= 0)
-);
+        CHECK (total_registrado >= 0),
+    -- La PK de una tabla particionada debe incluir la clave de partición
+    CONSTRAINT pk_pedidos_venta PRIMARY KEY (id_pedido, id_sede)
+) PARTITION BY LIST (id_sede);
 
 
 -- 3. DETALLE DE PEDIDO
-CREATE TABLE detalle_pedido (
-    id_pedido       INT NOT NULL
-        CONSTRAINT fk_detpedido_pedido
-        REFERENCES pedidos_venta(id_pedido)
-        ON DELETE CASCADE,
-    id_producto     INT NOT NULL,
-    -- FKL a catalogo_db.productos
-    cantidad        INT NOT NULL CHECK (cantidad > 0),
+CREATE TABLE ventas.detalle_pedido (
+    id_pedido       INT           NOT NULL,
+    id_sede         INT           NOT NULL,   -- Se propaga para poder referenciar la PK compuesta
+    id_producto     INT           NOT NULL,   -- FKL a catalogo.productos
+    cantidad        INT           NOT NULL CHECK (cantidad > 0),
     precio_unitario NUMERIC(12,2) NOT NULL CHECK (precio_unitario >= 0),
-    PRIMARY KEY (id_pedido, id_producto)
+    PRIMARY KEY (id_pedido, id_producto),
+    CONSTRAINT fk_detpedido_pedido FOREIGN KEY (id_pedido, id_sede)
+        REFERENCES ventas.pedidos_venta (id_pedido, id_sede) ON DELETE CASCADE
 );
 
 
 -- 4. PAGOS
-CREATE TABLE pagos (
+CREATE TABLE ventas.pagos (
     id_pago     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_pedido   INT NOT NULL
         CONSTRAINT fk_pago_pedido REFERENCES pedidos_venta(id_pedido),
+    id_sede  INT NOT NULL
+        CONSTRAINT fk_pago_sede REFERENCES pedidos_venta(id_sede),
     fecha_pago  DATE NOT NULL DEFAULT CURRENT_DATE,
     valor       NUMERIC(14,2) NOT NULL CHECK (valor > 0),
     medio_pago  VARCHAR(20) NOT NULL
@@ -859,10 +867,12 @@ CREATE TABLE pagos (
 
 
 -- 5. DEVOLUCIONES
-CREATE TABLE devoluciones (
+CREATE TABLE ventas.devoluciones (
     id_devolucion   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_pedido       INT NOT NULL
         CONSTRAINT fk_devolucion_pedido REFERENCES pedidos_venta(id_pedido),
+    id_sede  INT NOT NULL
+        CONSTRAINT fk_devolucion_sede REFERENCES pedidos_venta(id_sede),
     fecha_solicitud DATE NOT NULL DEFAULT CURRENT_DATE,
     motivo          VARCHAR(200) NOT NULL,
     estado          VARCHAR(15) NOT NULL DEFAULT 'pendiente'
@@ -871,7 +881,7 @@ CREATE TABLE devoluciones (
 
 
 -- 6. DETALLE DE DEVOLUCION
-CREATE TABLE detalle_devolucion (
+CREATE TABLE ventas.detalle_devolucion (
     id_devolucion       INT NOT NULL
         CONSTRAINT fk_detdev_devolucion
         REFERENCES devoluciones(id_devolucion)
@@ -915,7 +925,7 @@ VALUES
 
 -- Pedidos_venta
 -- id_sede e id_almacen refieren a organizacion_db | id_empleado refiere a identidad_db
-INSERT INTO pedidos_venta (
+INSERT INTO ventas.pedidos_venta (
     id_sede,
     id_almacen,
     id_cliente,
@@ -933,18 +943,19 @@ VALUES
 
 -- Detalle_pedido
 -- id_producto refiere a catalogo_db
-INSERT INTO detalle_pedido (
+INSERT INTO ventas.detalle_pedido (
     id_pedido,
+    id_sede,
     id_producto,
     cantidad,
     precio_unitario
 )
 VALUES
-    (1, 101, 2, 170000.00),  -- Pedido 1: 2 Teclados Mecánicos
-    (1, 102, 1, 1250000.00), -- Pedido 1: 1 Monitor Gamer 27"
-    (2, 103, 100, 3500.00),  -- Pedido 2: 100 Bebidas Energizantes
-    (3, 101, 3, 200000.00),  -- Pedido 3: 3 Teclados Mecánicos
-    (4, 104, 5, 36000.00);   -- Pedido 4: 5 Kits de Limpieza
+    (2, 1,101, 2, 170000.00),  -- Pedido 2: 2 Teclados Mecánicos
+    (2, 1,102, 1, 1250000.00), -- Pedido 2: 1 Monitor Gamer 27"
+    (3, 2,103, 100, 3500.00),  -- Pedido 3: 100 Bebidas Energizantes
+    (4, 1,101, 3, 200000.00),  -- Pedido 4: 3 Teclados Mecánicos
+    (5, 3,104, 5, 36000.00);   -- Pedido 5: 5 Kits de Limpieza
 
 
 -- Pagos
