@@ -256,7 +256,7 @@ def test_report_view_adapters_query_and_map_rows(
         SimpleNamespace(name="id_producto"),
         SimpleNamespace(name="producto"),
     ]
-    cursor.fetchall.return_value = [(3, "Producto")]
+    cursor.fetchall.return_value = [{"id_producto": 3, "producto": "Producto"}]
     connection = MagicMock()
     connection.cursor.return_value = cursor
 

@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Any
 
 from psycopg import Connection
@@ -26,7 +27,12 @@ class BaseViewAdapter(ViewOut):
                     f"La consulta para {self.getEntityName()} no devolvió columnas."
                 )
             columns = [description.name for description in cursor.description]
-            return [dict(zip(columns, row, strict=True)) for row in results]
+            return [
+                dict(row)
+                if isinstance(row, Mapping)
+                else dict(zip(columns, row, strict=True))
+                for row in results
+            ]
 
     def getEntityName(self) -> str:
         return self.entity_name
