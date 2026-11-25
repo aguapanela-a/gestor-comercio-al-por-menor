@@ -1,0 +1,162 @@
+API de reportes
+Base URL local: http://127.0.0.1:8007
+Todos los endpoints usan GET y responden con un arreglo JSON. Los valores son ejemplos.
+
+1. GET /vista_inventario_por_sede
+[
+  {
+    "id_sede": 1,
+    "sede": "Centro",
+    "id_almacen": 2,
+    "almacen": "Principal",
+    "id_producto": 3,
+    "sku": "SKU-3",
+    "producto": "Producto",
+    "categoria": "General",
+    "existencia_actual": 20,
+    "stock_minimo": 5,
+    "precio_lista": 1000.00,
+    "valorizacion_estimada": 20000.00
+  }
+]
+
+2. GET /vista_alertas_reabastecimiento
+[
+  {
+    "id_sede": 1,
+    "sede": "Centro",
+    "id_almacen": 2,
+    "almacen": "Principal",
+    "id_producto": 3,
+    "sku": "SKU-3",
+    "producto": "Producto",
+    "existencia_actual": 0,
+    "stock_minimo": 5,
+    "faltante": 5,
+    "nivel_alerta": "SIN EXISTENCIA"
+  }
+]
+
+3. GET /vista_productos_sin_inventario
+[
+  {
+    "id_sede": 1,
+    "sede": "Centro",
+    "id_producto": 3,
+    "sku": "SKU-3",
+    "producto": "Producto"
+  }
+]
+
+4. GET /vista_ventas_mensuales_por_sede
+[
+  {
+    "id_sede": 1,
+    "sede": "Centro",
+    "mes": "2026-10-01",
+    "pedidos": 20,
+    "total_vendido": 50000.00,
+    "total_mes_anterior": null,
+    "variacion": null,
+    "variacion_pct": null
+  }
+]
+
+5. GET /vista_pedidos_pendientes
+[
+  {
+    "id_pedido": 4,
+    "id_sede": 1,
+    "sede": "Centro",
+    "id_almacen": 2,
+    "almacen": "Principal",
+    "id_cliente": 5,
+    "cliente": "Cliente",
+    "id_empleado": null,
+    "vendedor": null,
+    "fecha_pedido": "2026-11-24T10:30:00",
+    "dias_antiguedad": 1,
+    "total_registrado": 12000.00
+  }
+]
+
+6. GET /vista_saldos_pendientes
+[
+  {
+    "id_pedido": 4,
+    "id_sede": 1,
+    "sede": "Centro",
+    "id_cliente": 5,
+    "cliente": "Cliente",
+    "fecha_pedido": "2026-11-24T10:30:00",
+    "total_registrado": 12000.00,
+    "pagos_confirmados": 2000.00,
+    "saldo_pendiente": 10000.00
+  }
+]
+
+7. GET /vista_compras_pendientes
+[
+  {
+    "id_orden_compra": 6,
+    "proveedor": "Proveedor",
+    "id_almacen_destino": 2,
+    "almacen_destino": "Principal",
+    "fecha_orden": "2026-11-20T09:00:00",
+    "fecha_estimada": null,
+    "estado_orden": "enviada",
+    "id_producto": 3,
+    "producto": "Producto",
+    "cantidad_solicitada": 10,
+    "cantidad_recibida": 4,
+    "cantidad_pendiente": 6
+  }
+]
+
+8. GET /vista_transferencias_en_transito
+[
+  {
+    "id_transferencia": 7,
+    "id_almacen_origen": 2,
+    "almacen_origen": "Norte",
+    "sede_origen": "Norte",
+    "id_almacen_destino": 8,
+    "almacen_destino": "Sur",
+    "sede_destino": "Sur",
+    "fecha_despacho": "2026-11-23T08:00:00",
+    "dias_transcurridos": 2,
+    "id_producto": 3,
+    "producto": "Producto",
+    "cantidad_enviada": 5
+  }
+]
+
+9. GET /vista_devoluciones_por_producto
+[
+  {
+    "id_producto": 3,
+    "sku": "SKU-3",
+    "producto": "Producto",
+    "categoria": "General",
+    "cantidad_vendida": 100,
+    "cantidad_devuelta": 2,
+    "porcentaje_devolucion": 2.00
+  }
+]
+
+10. GET /vista_reporte_corporativo
+[
+  {
+    "id_sede": 1,
+    "sede": "Centro",
+    "tipo_sede": "principal",
+    "productos_activos": 20,
+    "unidades_inventario": 150,
+    "ventas_total": 500000.00,
+    "pedidos_pendientes": 2,
+    "ordenes_compra": 3,
+    "valor_compras": 125000.00,
+    "transferencias_enviadas": 4,
+    "transferencias_recibidas": 3
+  }
+]
