@@ -1,0 +1,94 @@
+﻿name: gestor-comercio
+x-common-environment: &common-environment
+  DATABASE_PORT: ${DATABASE_PORT:-5432}
+  DATABASE_SSLMODE: ${DATABASE_SSLMODE:-require}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Falta JWT_SECRET_KEY en backend/.env}
+  JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+  IDENTIDAD_SERVICE_URL: http://identidad:8000
+  CATALOGO_SERVICE_URL: http://catalogo:8000
+  ORGANIZACION_SERVICE_URL: http://organizacion:8000
+  COMPRAS_SERVICE_URL: http://compras:8000
+  INVENTARIOS_SERVICE_URL: http://inventarios:8000
+  VENTAS_SERVICE_URL: http://ventas:8000
+  SERVICE_HTTP_TIMEOUT_SECONDS: ${SERVICE_HTTP_TIMEOUT_SECONDS:-3}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+services:
+  identidad:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.services.identidad.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *common-environment
+      DATABASE_IDENTIDAD_HOST: ${DATABASE_IDENTIDAD_HOST:?Falta DATABASE_IDENTIDAD_HOST}
+      DATABASE_IDENTIDAD_NAME: ${DATABASE_IDENTIDAD_NAME:?Falta DATABASE_IDENTIDAD_NAME}
+      DATABASE_IDENTIDAD_USER: ${DATABASE_IDENTIDAD_USER:?Falta DATABASE_IDENTIDAD_USER}
+      DATABASE_IDENTIDAD_PASSWORD: ${DATABASE_IDENTIDAD_PASSWORD:?Falta DATABASE_IDENTIDAD_PASSWORD}
+    ports: ["8001:8000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  catalogo:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.services.catalogo.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *common-environment
+      DATABASE_CATALOGO_HOST: ${DATABASE_CATALOGO_HOST:?Falta DATABASE_CATALOGO_HOST}
+      DATABASE_CATALOGO_NAME: ${DATABASE_CATALOGO_NAME:?Falta DATABASE_CATALOGO_NAME}
+      DATABASE_CATALOGO_USER: ${DATABASE_CATALOGO_USER:?Falta DATABASE_CATALOGO_USER}
+      DATABASE_CATALOGO_PASSWORD: ${DATABASE_CATALOGO_PASSWORD:?Falta DATABASE_CATALOGO_PASSWORD}
+    ports: ["8002:8000"]
+    restart: unless-stopped
+  organizacion:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.services.organizacion.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *common-environment
+      DATABASE_ORGANIZACION_HOST: ${DATABASE_ORGANIZACION_HOST:?Falta DATABASE_ORGANIZACION_HOST}
+      DATABASE_ORGANIZACION_NAME: ${DATABASE_ORGANIZACION_NAME:?Falta DATABASE_ORGANIZACION_NAME}
+      DATABASE_ORGANIZACION_USER: ${DATABASE_ORGANIZACION_USER:?Falta DATABASE_ORGANIZACION_USER}
+      DATABASE_ORGANIZACION_PASSWORD: ${DATABASE_ORGANIZACION_PASSWORD:?Falta DATABASE_ORGANIZACION_PASSWORD}
+    ports: ["8003:8000"]
+    restart: unless-stopped
+  compras:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.services.compras.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *common-environment
+      DATABASE_COMPRAS_HOST: ${DATABASE_COMPRAS_HOST:?Falta DATABASE_COMPRAS_HOST}
+      DATABASE_COMPRAS_NAME: ${DATABASE_COMPRAS_NAME:?Falta DATABASE_COMPRAS_NAME}
+      DATABASE_COMPRAS_USER: ${DATABASE_COMPRAS_USER:?Falta DATABASE_COMPRAS_USER}
+      DATABASE_COMPRAS_PASSWORD: ${DATABASE_COMPRAS_PASSWORD:?Falta DATABASE_COMPRAS_PASSWORD}
+    ports: ["8004:8000"]
+    restart: unless-stopped
+  inventarios:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.services.inventarios.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *common-environment
+      DATABASE_INVENTARIOS_HOST: ${DATABASE_INVENTARIOS_HOST:?Falta DATABASE_INVENTARIOS_HOST}
+      DATABASE_INVENTARIOS_NAME: ${DATABASE_INVENTARIOS_NAME:?Falta DATABASE_INVENTARIOS_NAME}
+      DATABASE_INVENTARIOS_USER: ${DATABASE_INVENTARIOS_USER:?Falta DATABASE_INVENTARIOS_USER}
+      DATABASE_INVENTARIOS_PASSWORD: ${DATABASE_INVENTARIOS_PASSWORD:?Falta DATABASE_INVENTARIOS_PASSWORD}
+    ports: ["8005:8000"]
+    restart: unless-stopped
+  ventas:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.services.ventas.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *common-environment
+      DATABASE_VENTAS_HOST: ${DATABASE_VENTAS_HOST:?Falta DATABASE_VENTAS_HOST}
+      DATABASE_VENTAS_NAME: ${DATABASE_VENTAS_NAME:?Falta DATABASE_VENTAS_NAME}
+      DATABASE_VENTAS_USER: ${DATABASE_VENTAS_USER:?Falta DATABASE_VENTAS_USER}
+      DATABASE_VENTAS_PASSWORD: ${DATABASE_VENTAS_PASSWORD:?Falta DATABASE_VENTAS_PASSWORD}
+    ports: ["8006:8000"]
+    restart: unless-stopped

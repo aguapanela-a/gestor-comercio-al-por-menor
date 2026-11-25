@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import settings
 from app.core.database import SERVICE_DATABASE_SETTINGS
 from app.core.health import check_database_connection
 
@@ -9,6 +11,20 @@ def create_service_app(service: str, title: str) -> FastAPI:
         raise ValueError(f"Servicio sin base de datos configurada: {service}")
 
     app = FastAPI(title=title, version="1.0.0")
+
+    allowed_origins = [
+        origin.strip()
+        for origin in settings.cors_allowed_origins.split(",")
+        if origin.strip()
+    ]
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=['*'],
+            allow_headers=['*'],
+        )
 
     @app.get("/health")
     def health():
