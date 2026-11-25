@@ -855,6 +855,8 @@ CREATE TABLE ventas.pagos (
     id_pago     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_pedido   INT NOT NULL
         CONSTRAINT fk_pago_pedido REFERENCES pedidos_venta(id_pedido),
+    id_sede  INT NOT NULL
+        CONSTRAINT fk_pago_sede REFERENCES pedidos_venta(id_sede),
     fecha_pago  DATE NOT NULL DEFAULT CURRENT_DATE,
     valor       NUMERIC(14,2) NOT NULL CHECK (valor > 0),
     medio_pago  VARCHAR(20) NOT NULL
@@ -865,10 +867,12 @@ CREATE TABLE ventas.pagos (
 
 
 -- 5. DEVOLUCIONES
-CREATE TABLE devoluciones (
+CREATE TABLE ventas.devoluciones (
     id_devolucion   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_pedido       INT NOT NULL
         CONSTRAINT fk_devolucion_pedido REFERENCES pedidos_venta(id_pedido),
+    id_sede  INT NOT NULL
+        CONSTRAINT fk_devolucion_sede REFERENCES pedidos_venta(id_sede),
     fecha_solicitud DATE NOT NULL DEFAULT CURRENT_DATE,
     motivo          VARCHAR(200) NOT NULL,
     estado          VARCHAR(15) NOT NULL DEFAULT 'pendiente'
