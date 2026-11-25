@@ -319,3 +319,81 @@ tbody tr:hover { background: #fbfcfc; }
   .service-row:nth-child(odd) { border-right: 0; }
   .service-state { font-size: 9px; }
 }
+
+
+.report-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.report-option {
+  display: flex;
+  min-width: 0;
+  min-height: 66px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+}
+
+.report-option:hover {
+  border-color: #a8c6bc;
+  background: #fbfdfc;
+}
+
+.report-option-active {
+  border-color: #78a99a;
+  background: #edf5f1;
+}
+
+.report-option-title {
+  color: #344740;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.report-option-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #287459;
+  font-size: 10px;
+}
+
+.report-option-status svg {
+  flex: 0 0 auto;
+}
+
+.report-option:has(.report-option-status svg.lucide-clock-3) .report-option-status {
+  color: #967025;
+}
+
+.report-count {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.report-empty {
+  min-height: 220px;
+}
+
+@media (max-width: 900px) {
+  .report-selector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .report-selector {
+    grid-template-columns: 1fr;
+  }
+}
+

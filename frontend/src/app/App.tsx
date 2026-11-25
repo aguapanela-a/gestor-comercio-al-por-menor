@@ -1,4 +1,4 @@
-import { LoaderCircle } from 'lucide-react'
+﻿import { LoaderCircle } from 'lucide-react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { LoginPage } from '../features/auth/LoginPage'
@@ -8,30 +8,17 @@ import { InventoryPage } from '../features/operations/InventoryPage'
 import { PurchasesPage } from '../features/operations/PurchasesPage'
 import { SalesPage } from '../features/operations/SalesPage'
 import { PrivateLayout } from '../layouts/PrivateLayout'
-import { PageHeader } from '../components/common/PageHeader'
+import { ReportsPage } from '../features/reports/ReportsPage'
 
 function PrivateRoutes() {
   const { token, ready } = useAuth()
   if (!ready) {
-    return <div className="app-loading"><LoaderCircle size={24} className="spin" /><span>Verificando sesión…</span></div>
+    return <div className="app-loading"><LoaderCircle size={24} className="spin" /><span>Verificando sesiÃ³nâ€¦</span></div>
   }
   if (!token) return <Navigate to="/login" replace />
   return <PrivateLayout />
 }
 
-function ReportsPage() {
-  return (
-    <>
-      <PageHeader eyebrow="Análisis" title="Reportes" description="Consulta de información consolidada." />
-      <section className="empty-feature">
-        <div className="empty-feature-mark"><span>R</span></div>
-        <h2>Integración pendiente</h2>
-        <p>La API de Reportes aún no está integrada a esta interfaz. No se muestran reportes ni datos de ejemplo.</p>
-        <small>Servicio previsto en VITE_REPORTES_API_URL</small>
-      </section>
-    </>
-  )
-}
 
 export function App() {
   return (
@@ -61,3 +48,4 @@ export function App() {
     </Routes>
   )
 }
+
