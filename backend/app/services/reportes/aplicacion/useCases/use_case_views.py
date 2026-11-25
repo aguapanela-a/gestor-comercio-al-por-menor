@@ -1,16 +1,16 @@
 from app.services.reportes.aplicacion.puertos_entrada import InPortViews
 from app.services.reportes.aplicacion.puertos_salida import OutPortViews
 from app.services.reportes.nucleo.modelos import (
-    View1,
-    View2,
-    View3,
-    View4,
-    View5,
-    View6,
-    View7,
-    View8,
-    View9,
-    View10,
+    VistaAlertasReabastecimiento,
+    VistaComprasPendientes,
+    VistaDevolucionesPorProducto,
+    VistaInventarioPorSede,
+    VistaPedidosPendientes,
+    VistaProductosSinInventario,
+    VistaReporteCorporativo,
+    VistaSaldosPendientes,
+    VistaTransferenciasEnTransito,
+    VistaVentasMensualesPorSede,
 )
 
 
@@ -18,32 +18,62 @@ class UseCaseViews(InPortViews):
     def __init__(self, out_port: OutPortViews) -> None:
         self._out_port = out_port
 
-    def getView1(self) -> list[View1]:
-        return [View1(row) for row in self._out_port.getView("VIEW1")]
+    def get_vista_inventario_por_sede(self) -> list[VistaInventarioPorSede]:
+        return [
+            VistaInventarioPorSede(row)
+            for row in self._out_port.getView("vista_inventario_por_sede")
+        ]
 
-    def getView2(self) -> list[View2]:
-        return [View2(row) for row in self._out_port.getView("VIEW2")]
+    def get_vista_alertas_reabastecimiento(self) -> list[VistaAlertasReabastecimiento]:
+        return [
+            VistaAlertasReabastecimiento(row)
+            for row in self._out_port.getView("vista_alertas_reabastecimiento")
+        ]
 
-    def getView3(self) -> list[View3]:
-        return [View3(row) for row in self._out_port.getView("VIEW3")]
+    def get_vista_productos_sin_inventario(self) -> list[VistaProductosSinInventario]:
+        return [
+            VistaProductosSinInventario(row)
+            for row in self._out_port.getView("vista_productos_sin_inventario")
+        ]
 
-    def getView4(self) -> list[View4]:
-        return [View4(row) for row in self._out_port.getView("VIEW4")]
+    def get_vista_ventas_mensuales_por_sede(self) -> list[VistaVentasMensualesPorSede]:
+        return [
+            VistaVentasMensualesPorSede(row)
+            for row in self._out_port.getView("vista_ventas_mensuales_por_sede")
+        ]
 
-    def getView5(self) -> list[View5]:
-        return [View5(row) for row in self._out_port.getView("VIEW5")]
+    def get_vista_pedidos_pendientes(self) -> list[VistaPedidosPendientes]:
+        return [
+            VistaPedidosPendientes(row)
+            for row in self._out_port.getView("vista_pedidos_pendientes")
+        ]
 
-    def getView6(self) -> list[View6]:
-        return [View6(row) for row in self._out_port.getView("VIEW6")]
+    def get_vista_saldos_pendientes(self) -> list[VistaSaldosPendientes]:
+        return [
+            VistaSaldosPendientes(row)
+            for row in self._out_port.getView("vista_saldos_pendientes")
+        ]
 
-    def getView7(self) -> list[View7]:
-        return [View7(row) for row in self._out_port.getView("VIEW7")]
+    def get_vista_compras_pendientes(self) -> list[VistaComprasPendientes]:
+        return [
+            VistaComprasPendientes(row)
+            for row in self._out_port.getView("vista_compras_pendientes")
+        ]
 
-    def getView8(self) -> list[View8]:
-        return [View8(row) for row in self._out_port.getView("VIEW8")]
+    def get_vista_transferencias_en_transito(self) -> list[VistaTransferenciasEnTransito]:
+        return [
+            VistaTransferenciasEnTransito(row)
+            for row in self._out_port.getView("vista_transferencias_en_transito")
+        ]
 
-    def getView9(self) -> list[View9]:
-        return [View9(row) for row in self._out_port.getView("VIEW9")]
+    def get_vista_devoluciones_por_producto(self) -> list[VistaDevolucionesPorProducto]:
+        return [
+            VistaDevolucionesPorProducto(row)
+            for row in self._out_port.getView("vista_devoluciones_por_producto")
+        ]
 
-    def getView10(self) -> list[View10]:
-        return [View10(row) for row in self._out_port.getView("VIEW10")]
+    def get_vista_reporte_corporativo(self) -> list[VistaReporteCorporativo]:
+        return [
+            VistaReporteCorporativo(row)
+            for row in self._out_port.getView("vista_reporte_corporativo")
+        ]

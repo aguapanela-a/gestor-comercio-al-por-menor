@@ -8,16 +8,16 @@ from app.services.reportes.infraestructura.adaptadores_entrada.dependencies impo
     get_use_case_views,
 )
 from app.services.reportes.nucleo.modelos import (
-    View1,
-    View2,
-    View3,
-    View4,
-    View5,
-    View6,
-    View7,
-    View8,
-    View9,
-    View10,
+    VistaAlertasReabastecimiento,
+    VistaComprasPendientes,
+    VistaDevolucionesPorProducto,
+    VistaInventarioPorSede,
+    VistaPedidosPendientes,
+    VistaProductosSinInventario,
+    VistaReporteCorporativo,
+    VistaSaldosPendientes,
+    VistaTransferenciasEnTransito,
+    VistaVentasMensualesPorSede,
 )
 
 T = TypeVar("T")
@@ -27,34 +27,64 @@ class GetViewInAdapter:
     def __init__(self) -> None:
         self.router = APIRouter(tags=["Reportes"])
         self.router.add_api_route(
-            "/view1", self.get_view1, methods=["GET"], response_model=None
+            "/vista_inventario_por_sede",
+            self.get_vista_inventario_por_sede,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view2", self.get_view2, methods=["GET"], response_model=None
+            "/vista_alertas_reabastecimiento",
+            self.get_vista_alertas_reabastecimiento,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view3", self.get_view3, methods=["GET"], response_model=None
+            "/vista_productos_sin_inventario",
+            self.get_vista_productos_sin_inventario,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view4", self.get_view4, methods=["GET"], response_model=None
+            "/vista_ventas_mensuales_por_sede",
+            self.get_vista_ventas_mensuales_por_sede,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view5", self.get_view5, methods=["GET"], response_model=None
+            "/vista_pedidos_pendientes",
+            self.get_vista_pedidos_pendientes,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view6", self.get_view6, methods=["GET"], response_model=None
+            "/vista_saldos_pendientes",
+            self.get_vista_saldos_pendientes,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view7", self.get_view7, methods=["GET"], response_model=None
+            "/vista_compras_pendientes",
+            self.get_vista_compras_pendientes,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view8", self.get_view8, methods=["GET"], response_model=None
+            "/vista_transferencias_en_transito",
+            self.get_vista_transferencias_en_transito,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view9", self.get_view9, methods=["GET"], response_model=None
+            "/vista_devoluciones_por_producto",
+            self.get_vista_devoluciones_por_producto,
+            methods=["GET"],
+            response_model=None,
         )
         self.router.add_api_route(
-            "/view10", self.get_view10, methods=["GET"], response_model=None
+            "/vista_reporte_corporativo",
+            self.get_vista_reporte_corporativo,
+            methods=["GET"],
+            response_model=None,
         )
 
     @staticmethod
@@ -67,52 +97,52 @@ class GetViewInAdapter:
                 detail=str(error),
             ) from error
 
-    def get_view1(
+    def get_vista_inventario_por_sede(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View1]:
-        return self._execute(use_case.getView1)
+    ) -> list[VistaInventarioPorSede]:
+        return self._execute(use_case.get_vista_inventario_por_sede)
 
-    def get_view2(
+    def get_vista_alertas_reabastecimiento(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View2]:
-        return self._execute(use_case.getView2)
+    ) -> list[VistaAlertasReabastecimiento]:
+        return self._execute(use_case.get_vista_alertas_reabastecimiento)
 
-    def get_view3(
+    def get_vista_productos_sin_inventario(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View3]:
-        return self._execute(use_case.getView3)
+    ) -> list[VistaProductosSinInventario]:
+        return self._execute(use_case.get_vista_productos_sin_inventario)
 
-    def get_view4(
+    def get_vista_ventas_mensuales_por_sede(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View4]:
-        return self._execute(use_case.getView4)
+    ) -> list[VistaVentasMensualesPorSede]:
+        return self._execute(use_case.get_vista_ventas_mensuales_por_sede)
 
-    def get_view5(
+    def get_vista_pedidos_pendientes(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View5]:
-        return self._execute(use_case.getView5)
+    ) -> list[VistaPedidosPendientes]:
+        return self._execute(use_case.get_vista_pedidos_pendientes)
 
-    def get_view6(
+    def get_vista_saldos_pendientes(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View6]:
-        return self._execute(use_case.getView6)
+    ) -> list[VistaSaldosPendientes]:
+        return self._execute(use_case.get_vista_saldos_pendientes)
 
-    def get_view7(
+    def get_vista_compras_pendientes(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View7]:
-        return self._execute(use_case.getView7)
+    ) -> list[VistaComprasPendientes]:
+        return self._execute(use_case.get_vista_compras_pendientes)
 
-    def get_view8(
+    def get_vista_transferencias_en_transito(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View8]:
-        return self._execute(use_case.getView8)
+    ) -> list[VistaTransferenciasEnTransito]:
+        return self._execute(use_case.get_vista_transferencias_en_transito)
 
-    def get_view9(
+    def get_vista_devoluciones_por_producto(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View9]:
-        return self._execute(use_case.getView9)
+    ) -> list[VistaDevolucionesPorProducto]:
+        return self._execute(use_case.get_vista_devoluciones_por_producto)
 
-    def get_view10(
+    def get_vista_reporte_corporativo(
         self, use_case: InPortViews = Depends(get_use_case_views)
-    ) -> list[View10]:
-        return self._execute(use_case.getView10)
+    ) -> list[VistaReporteCorporativo]:
+        return self._execute(use_case.get_vista_reporte_corporativo)

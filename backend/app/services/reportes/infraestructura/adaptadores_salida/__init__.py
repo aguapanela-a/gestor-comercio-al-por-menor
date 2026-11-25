@@ -1,23 +1,43 @@
-from app.services.reportes.infraestructura.adaptadores_salida.view1 import View1
-from app.services.reportes.infraestructura.adaptadores_salida.view2 import View2
-from app.services.reportes.infraestructura.adaptadores_salida.view3 import View3
-from app.services.reportes.infraestructura.adaptadores_salida.view4 import View4
-from app.services.reportes.infraestructura.adaptadores_salida.view5 import View5
-from app.services.reportes.infraestructura.adaptadores_salida.view6 import View6
-from app.services.reportes.infraestructura.adaptadores_salida.view7 import View7
-from app.services.reportes.infraestructura.adaptadores_salida.view8 import View8
-from app.services.reportes.infraestructura.adaptadores_salida.view9 import View9
-from app.services.reportes.infraestructura.adaptadores_salida.view10 import View10
+from app.services.reportes.infraestructura.adaptadores_salida.vista_alertas_reabastecimiento import (
+    VistaAlertasReabastecimiento,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_compras_pendientes import (
+    VistaComprasPendientes,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_devoluciones_por_producto import (
+    VistaDevolucionesPorProducto,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_inventario_por_sede import (
+    VistaInventarioPorSede,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_pedidos_pendientes import (
+    VistaPedidosPendientes,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_productos_sin_inventario import (
+    VistaProductosSinInventario,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_reporte_corporativo import (
+    VistaReporteCorporativo,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_saldos_pendientes import (
+    VistaSaldosPendientes,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_transferencias_en_transito import (
+    VistaTransferenciasEnTransito,
+)
+from app.services.reportes.infraestructura.adaptadores_salida.vista_ventas_mensuales_por_sede import (
+    VistaVentasMensualesPorSede,
+)
 
 __all__ = [
-    "View1",
-    "View2",
-    "View3",
-    "View4",
-    "View5",
-    "View6",
-    "View7",
-    "View8",
-    "View9",
-    "View10",
+    "VistaAlertasReabastecimiento",
+    "VistaComprasPendientes",
+    "VistaDevolucionesPorProducto",
+    "VistaInventarioPorSede",
+    "VistaPedidosPendientes",
+    "VistaProductosSinInventario",
+    "VistaReporteCorporativo",
+    "VistaSaldosPendientes",
+    "VistaTransferenciasEnTransito",
+    "VistaVentasMensualesPorSede",
 ]

@@ -1,56 +1,56 @@
 from abc import ABC, abstractmethod
 
 from app.services.reportes.nucleo.modelos import (
-    View1,
-    View2,
-    View3,
-    View4,
-    View5,
-    View6,
-    View7,
-    View8,
-    View9,
-    View10,
+    VistaAlertasReabastecimiento,
+    VistaComprasPendientes,
+    VistaDevolucionesPorProducto,
+    VistaInventarioPorSede,
+    VistaPedidosPendientes,
+    VistaProductosSinInventario,
+    VistaReporteCorporativo,
+    VistaSaldosPendientes,
+    VistaTransferenciasEnTransito,
+    VistaVentasMensualesPorSede,
 )
 
 
 class InPortViews(ABC):
     @abstractmethod
-    def getView1(self) -> list[View1]:
+    def get_vista_inventario_por_sede(self) -> list[VistaInventarioPorSede]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView2(self) -> list[View2]:
+    def get_vista_alertas_reabastecimiento(self) -> list[VistaAlertasReabastecimiento]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView3(self) -> list[View3]:
+    def get_vista_productos_sin_inventario(self) -> list[VistaProductosSinInventario]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView4(self) -> list[View4]:
+    def get_vista_ventas_mensuales_por_sede(self) -> list[VistaVentasMensualesPorSede]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView5(self) -> list[View5]:
+    def get_vista_pedidos_pendientes(self) -> list[VistaPedidosPendientes]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView6(self) -> list[View6]:
+    def get_vista_saldos_pendientes(self) -> list[VistaSaldosPendientes]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView7(self) -> list[View7]:
+    def get_vista_compras_pendientes(self) -> list[VistaComprasPendientes]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView8(self) -> list[View8]:
+    def get_vista_transferencias_en_transito(self) -> list[VistaTransferenciasEnTransito]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView9(self) -> list[View9]:
+    def get_vista_devoluciones_por_producto(self) -> list[VistaDevolucionesPorProducto]:
         raise NotImplementedError
 
     @abstractmethod
-    def getView10(self) -> list[View10]:
+    def get_vista_reporte_corporativo(self) -> list[VistaReporteCorporativo]:
         raise NotImplementedError
