@@ -5,10 +5,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 ORDER_FRAGMENTS = {
-    1: "ventas.sede_norte_pedidos",
-    2: "ventas.sede_sur_pedidos",
-    3: "ventas.sede_centro_pedidos",
-    4: "ventas.sede_distribucion_pedidos",
+    1: "ventas.pedidos_venta_sede_norte",
+    2: "ventas.pedidos_venta_sede_sur",
+    3: "ventas.pedidos_venta_sede_centro",
+    4: "ventas.pedidos_venta_sede_distribucion",
 }
 ORDER_FRAGMENT_BY_SITE = ORDER_FRAGMENTS
 
@@ -455,3 +455,4 @@ def list_return_details(db: Session, id_devolucion: int) -> list[dict[str, Any]]
         {"id_devolucion": id_devolucion},
     ).mappings().all()
     return [dict(row) for row in rows]
+

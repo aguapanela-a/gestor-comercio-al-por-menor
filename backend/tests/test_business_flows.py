@@ -233,7 +233,7 @@ def test_order_creation_uses_fixed_site_fragment_and_database_sequence() -> None
     )
 
     insert, parameters = db.statements[0]
-    assert "INSERT INTO ventas.sede_norte_pedidos" in insert
+    assert "INSERT INTO ventas.pedidos_venta_sede_norte" in insert
     assert "id_pedido" not in insert.split("VALUES", 1)[0]
     assert parameters["total_registrado"] == Decimal("12.50")
     assert result["id_pedido"] == 21
@@ -297,3 +297,4 @@ def test_payment_cannot_exceed_locked_order_balance(
     assert not any("INSERT INTO ventas.pagos" in sql for sql, _ in db.statements)
     assert db.commits == 0
     assert db.rollbacks == 1
+

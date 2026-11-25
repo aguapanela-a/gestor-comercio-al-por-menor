@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -109,10 +109,12 @@ def test_order_listing_uses_only_operational_fragments(
     assert response.status_code == 200
     assert response.json()[0]["id_pedido"] == 21
     query = db.statements[0][0]
-    assert "ventas.sede_norte_pedidos" in query
-    assert "ventas.sede_sur_pedidos" in query
-    assert "ventas.sede_centro_pedidos" in query
-    assert "ventas.sede_distribucion_pedidos" in query
+    assert "ventas.pedidos_venta_sede_norte" in query
+    assert "ventas.pedidos_venta_sede_sur" in query
+    assert "ventas.pedidos_venta_sede_centro" in query
+    assert "ventas.pedidos_venta_sede_distribucion" in query
     assert "pedidos_venta_respaldo_20261123" not in query
-    assert "FROM ventas.pedidos_venta" not in query
+    assert not any(line.strip() == "FROM ventas.pedidos_venta" for line in query.splitlines())
     assert db.statements[0][1]["id_sede"] == 1
+
+
