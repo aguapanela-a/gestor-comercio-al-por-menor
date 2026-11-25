@@ -2,6 +2,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { LoginPage } from '../features/auth/LoginPage'
+import { AuditPage } from '../features/audit/AuditPage'
 import { HomePage } from '../features/home/HomePage'
 import { ResourcePage } from '../features/resources/ResourcePage'
 import { InventoryPage } from '../features/operations/InventoryPage'
@@ -28,6 +29,7 @@ export function App() {
         <Route index element={<HomePage />} />
         <Route path="/identity/employees" element={<ResourcePage resourceKey="employees" />} />
         <Route path="/identity/users" element={<ResourcePage resourceKey="users" />} />
+        <Route path="/identity/audit" element={<AuditPage />} />
         <Route path="/catalog/products" element={<ResourcePage resourceKey="products" />} />
         <Route path="/catalog/categories" element={<ResourcePage resourceKey="categories" />} />
         <Route path="/organization/sites" element={<ResourcePage resourceKey="sites" />} />

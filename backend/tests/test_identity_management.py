@@ -1,4 +1,10 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
@@ -44,6 +50,73 @@ class FakeDatabaseSession:
 
     def rollback(self):
         self.rollbacks += 1
+
+
+@contextmanager
+def audit_database(
+    rows: list[dict],
+    assignments: list[tuple[int, int]],
+) -> Iterator[Session]:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    connection = engine.connect()
+    connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS identidad")
+    connection.exec_driver_sql("""
+        CREATE TABLE identidad.roles_aplicacion (
+            id_rol INTEGER PRIMARY KEY,
+            codigo VARCHAR(32) NOT NULL UNIQUE
+        )
+    """)
+    connection.exec_driver_sql("""
+        CREATE TABLE identidad.usuarios_roles (
+            id_usuario INTEGER NOT NULL,
+            id_rol INTEGER NOT NULL,
+            asignado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id_usuario, id_rol)
+        )
+    """)
+    connection.exec_driver_sql("""
+        CREATE TABLE identidad.auditoria_accesos (
+            id_auditoria INTEGER PRIMARY KEY,
+            id_usuario INTEGER NOT NULL,
+            fecha_hora TEXT NOT NULL,
+            accion VARCHAR(30) NOT NULL,
+            objeto_consultado VARCHAR(120) NOT NULL
+        )
+    """)
+    connection.execute(
+        text("INSERT INTO identidad.roles_aplicacion (id_rol, codigo) VALUES (:id, :code)"),
+        [{"id": 1, "code": "auditor"}, {"id": 2, "code": "administrador"}],
+    )
+    if assignments:
+        connection.execute(
+            text("""
+                INSERT INTO identidad.usuarios_roles (id_usuario, id_rol)
+                VALUES (:id_usuario, :id_rol)
+            """),
+            [{"id_usuario": user_id, "id_rol": role_id} for user_id, role_id in assignments],
+        )
+    if rows:
+        connection.execute(
+            text("""
+                INSERT INTO identidad.auditoria_accesos
+                    (id_auditoria, id_usuario, fecha_hora, accion, objeto_consultado)
+                VALUES
+                    (:id_auditoria, :id_usuario, :fecha_hora, :accion, :objeto_consultado)
+            """),
+            rows,
+        )
+    connection.commit()
+    db = Session(bind=connection)
+    try:
+        yield db
+    finally:
+        db.close()
+        connection.close()
+        engine.dispose()
 
 
 @pytest.fixture
@@ -178,3 +251,120 @@ def test_password_change_requires_and_replaces_current_hash(
     assert db.statements[1][1]["password_hash"].startswith("$argon2")
     assert db.statements[1][1]["password_hash"] != "nueva"
     assert db.commits == 1
+
+
+@pytest.mark.parametrize("role_id", [1, 2], ids=["auditor", "administrador"])
+def test_audit_roles_read_all_records_in_stable_pages(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
+    role_id: int,
+) -> None:
+    rows = [
+        {
+            "id_auditoria": 101,
+            "id_usuario": 5,
+            "fecha_hora": "2026-11-25T10:00:00",
+            "accion": "SELECT",
+            "objeto_consultado": "identidad.usuarios",
+        },
+        {
+            "id_auditoria": 102,
+            "id_usuario": 6,
+            "fecha_hora": "2026-11-25T11:00:00",
+            "accion": "UPDATE",
+            "objeto_consultado": "identidad.usuarios",
+        },
+        {
+            "id_auditoria": 103,
+            "id_usuario": 7,
+            "fecha_hora": "2026-11-25T11:00:00",
+            "accion": "LOGIN",
+            "objeto_consultado": "autenticacion",
+        },
+    ]
+    with audit_database(rows, [(5, role_id)]) as db:
+        monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+        with TestClient(app) as client:
+            headers = {"Authorization": f"Bearer {auth_token}"}
+            first_page = client.get("/auth/audit?limit=2&offset=0", headers=headers)
+            second_page = client.get("/auth/audit?limit=2&offset=2", headers=headers)
+
+    assert first_page.status_code == 200
+    assert [row["id_auditoria"] for row in first_page.json()] == [103, 102]
+    assert second_page.status_code == 200
+    assert [row["id_auditoria"] for row in second_page.json()] == [101]
+    assert set(first_page.json()[0]) == {
+        "id_auditoria",
+        "id_usuario",
+        "fecha_hora",
+        "accion",
+        "objeto_consultado",
+    }
+
+
+def test_normal_user_cannot_expand_audit_scope_with_claim_or_query_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret_key", "identity-management-test-key")
+    token_with_untrusted_user_field = create_access_token(
+        {"sub": "5", "id_usuario": 6},
+    )
+    rows = [
+        {
+            "id_auditoria": 201,
+            "id_usuario": 5,
+            "fecha_hora": "2026-11-25T10:00:00",
+            "accion": "LOGIN",
+            "objeto_consultado": "autenticacion",
+        },
+        {
+            "id_auditoria": 202,
+            "id_usuario": 6,
+            "fecha_hora": "2026-11-25T11:00:00",
+            "accion": "SELECT",
+            "objeto_consultado": "identidad.usuarios",
+        },
+    ]
+    with audit_database(rows, [(6, 1)]) as db:
+        monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+        with TestClient(app) as client:
+            response = client.get(
+                "/auth/audit?limit=100&id_usuario=6&scope=global",
+                headers={"Authorization": f"Bearer {token_with_untrusted_user_field}"},
+            )
+
+    assert response.status_code == 200
+    assert [row["id_auditoria"] for row in response.json()] == [201]
+
+
+def test_audit_endpoint_rejects_unauthenticated_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret_key", "identity-management-test-key")
+    with audit_database([], []) as db:
+        monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+        with TestClient(app) as client:
+            response = client.get("/auth/audit")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("subject", ["0", "-1", "no-numerico", 5])
+def test_audit_endpoint_rejects_invalid_jwt_subjects(
+    monkeypatch: pytest.MonkeyPatch,
+    subject: object,
+) -> None:
+    monkeypatch.setattr(settings, "jwt_secret_key", "identity-management-test-key")
+    token = create_access_token({"sub": subject})
+    db = FakeDatabaseSession()
+    monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/auth/audit",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 401
+    assert db.statements == []

@@ -229,13 +229,37 @@ def list_access_audit(
 ) -> list[dict[str, Any]]:
     rows = db.execute(
         text("""
-            SELECT id_auditoria, id_usuario, fecha_hora, accion, objeto_consultado
-            FROM identidad.auditoria_accesos
-            WHERE id_usuario = :id_usuario
-            ORDER BY fecha_hora DESC, id_auditoria DESC
+            WITH global_audit_access AS (
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM identidad.usuarios_roles AS user_role
+                    JOIN identidad.roles_aplicacion AS app_role
+                      ON app_role.id_rol = user_role.id_rol
+                    WHERE user_role.id_usuario = :id_usuario
+                      AND app_role.codigo IN (
+                          :auditor_role,
+                          :administrator_role
+                      )
+                ) AS allowed
+            )
+            SELECT audit.id_auditoria,
+                   audit.id_usuario,
+                   audit.fecha_hora,
+                   audit.accion,
+                   audit.objeto_consultado
+            FROM identidad.auditoria_accesos AS audit
+            CROSS JOIN global_audit_access AS access
+            WHERE access.allowed OR audit.id_usuario = :id_usuario
+            ORDER BY audit.fecha_hora DESC, audit.id_auditoria DESC
             LIMIT :limit OFFSET :offset
         """),
-        {"id_usuario": id_usuario, "limit": limit, "offset": offset},
+        {
+            "id_usuario": id_usuario,
+            "auditor_role": "auditor",
+            "administrator_role": "administrador",
+            "limit": limit,
+            "offset": offset,
+        },
     ).mappings().all()
     return [dict(row) for row in rows]
 

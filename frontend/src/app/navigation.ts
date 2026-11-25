@@ -33,6 +33,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Empleados', path: '/identity/employees', icon: Users },
       { label: 'Usuarios', path: '/identity/users', icon: Users },
+      { label: 'Auditorías', path: '/identity/audit', icon: ClipboardList },
     ],
   },
   {

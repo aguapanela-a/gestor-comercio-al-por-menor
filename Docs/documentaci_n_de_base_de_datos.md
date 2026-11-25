@@ -1137,6 +1137,25 @@ CREATE TABLE IF NOT EXISTS identidad.auditoria_accesos (
 );
 ```
 
+### 6.1.1 Roles de aplicación para la consulta de auditoría
+
+La autorización de la API es independiente de los roles PostgreSQL y del campo `cargo`. La migración `backend/migrations/001_identity_application_roles.sql` crea `identidad.roles_aplicacion` y `identidad.usuarios_roles`, e incorpora los códigos de aplicación `auditor` y `administrador`. No asigna esos roles a ningún usuario.
+
+El endpoint `GET /auth/audit` toma `id_usuario` del `sub` del JWT validado. En una consulta de solo lectura, devuelve todos los registros si ese usuario tiene una asignación explícita de `auditor` o `administrador`; para los demás, filtra por ese mismo `id_usuario`. La paginación mantiene el orden `fecha_hora DESC, id_auditoria DESC`. No se acepta un alcance ni un identificador de usuario desde el cliente.
+
+La migración no otorga permisos PostgreSQL específicos del entorno. Después de aplicarla en la base de identidad, quien administre esa base debe identificar el usuario configurado como `DATABASE_IDENTIDAD_USER` para el servicio y otorgarle únicamente lectura sobre las tablas de autorización. Sustituya el marcador por el nombre exacto de ese rol PostgreSQL:
+
+```sql
+GRANT USAGE ON SCHEMA identidad
+TO "<DATABASE_IDENTIDAD_USER>";
+
+GRANT SELECT
+ON identidad.roles_aplicacion, identidad.usuarios_roles
+TO "<DATABASE_IDENTIDAD_USER>";
+```
+
+No se requieren permisos de escritura ni de secuencia para que la API consulte las asignaciones. El servicio ya necesita permiso de lectura sobre `identidad.auditoria_accesos` para responder al endpoint existente. Los roles de aplicación se asignan por separado y de forma explícita; no se incluyen asignaciones iniciales en la migración.
+
 ### 6.2 Inserción de datos (DML)
 
 Se vacían las tablas y se insertan 20 empleados de las cuatro sedes, 18 cuentas de usuario cuyo hash se calcula con `sha256` (solo como ejemplo de prueba) y 40 eventos de auditoría entre julio y octubre de 2026. Dos empleados quedan sin cuenta de usuario; al final se sincronizan las secuencias de identidad y se confirma con `COMMIT`.
