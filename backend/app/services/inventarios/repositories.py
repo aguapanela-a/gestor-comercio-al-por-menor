@@ -443,3 +443,255 @@ def list_transfer_details(
         {"id_transferencia": id_transferencia},
     ).mappings().all()
     return [dict(row) for row in rows]
+
+
+
+
+def dispatch_sales_order(
+    db: Session,
+    *,
+    id_pedido: int,
+    id_sede: int,
+    id_almacen: int,
+    products: list[dict[str, int]],
+) -> dict[str, Any]:
+    import json
+
+    normalized_products = sorted(
+        [
+            {
+                "id_producto": product["id_producto"],
+                "cantidad": product["cantidad"],
+            }
+            for product in products
+        ],
+        key=lambda item: item["id_producto"],
+    )
+
+    products_json = json.dumps(normalized_products)
+
+    inserted = db.execute(
+        text("""
+            INSERT INTO inventarios.despachos_venta (
+                id_pedido,
+                id_sede,
+                id_almacen,
+                productos
+            )
+            VALUES (
+                :id_pedido,
+                :id_sede,
+                :id_almacen,
+                CAST(:productos AS JSONB)
+            )
+            ON CONFLICT (id_pedido) DO NOTHING
+            RETURNING id_pedido
+        """),
+        {
+            "id_pedido": id_pedido,
+            "id_sede": id_sede,
+            "id_almacen": id_almacen,
+            "productos": products_json,
+        },
+    ).scalar_one_or_none()
+
+    if inserted is None:
+        existing = db.execute(
+            text("""
+                SELECT id_sede, id_almacen, productos
+                FROM inventarios.despachos_venta
+                WHERE id_pedido = :id_pedido
+            """),
+            {"id_pedido": id_pedido},
+        ).mappings().one()
+
+        existing_products = sorted(
+            existing["productos"],
+            key=lambda item: item["id_producto"],
+        )
+
+        if (
+            existing["id_sede"] != id_sede
+            or existing["id_almacen"] != id_almacen
+            or existing_products != normalized_products
+        ):
+            raise ValueError(
+                "El pedido ya fue despachado con datos diferentes"
+            )
+
+        return {
+            "id_pedido": id_pedido,
+            "id_sede": id_sede,
+            "id_almacen": id_almacen,
+            "productos": normalized_products,
+            "already_dispatched": True,
+        }
+
+    for product in normalized_products:
+        stock = db.execute(
+            text("""
+                SELECT existencia_actual
+                FROM inventarios.inventarios
+                WHERE id_sede = :id_sede
+                  AND id_almacen = :id_almacen
+                  AND id_producto = :id_producto
+                FOR UPDATE
+            """),
+            {
+                "id_sede": id_sede,
+                "id_almacen": id_almacen,
+                "id_producto": product["id_producto"],
+            },
+        ).mappings().first()
+
+        if (
+            stock is None
+            or stock["existencia_actual"] < product["cantidad"]
+        ):
+            raise ValueError(
+                f"Existencias insuficientes para el producto "
+                f"{product['id_producto']}"
+            )
+
+    for product in normalized_products:
+        db.execute(
+            text("""
+                UPDATE inventarios.inventarios
+                SET existencia_actual = existencia_actual - :cantidad,
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                WHERE id_sede = :id_sede
+                  AND id_almacen = :id_almacen
+                  AND id_producto = :id_producto
+            """),
+            {
+                "id_sede": id_sede,
+                "id_almacen": id_almacen,
+                "id_producto": product["id_producto"],
+                "cantidad": product["cantidad"],
+            },
+        )
+
+    return {
+        "id_pedido": id_pedido,
+        "id_sede": id_sede,
+        "id_almacen": id_almacen,
+        "productos": normalized_products,
+        "already_dispatched": False,
+    }
+
+
+def register_sales_return(
+    db: Session,
+    *,
+    id_devolucion: int,
+    id_pedido: int,
+    id_sede: int,
+    id_almacen: int,
+    products: list[dict[str, int]],
+) -> dict[str, Any]:
+    import json
+
+    normalized_products = sorted(
+        [
+            {
+                "id_producto": product["id_producto"],
+                "cantidad": product["cantidad"],
+            }
+            for product in products
+        ],
+        key=lambda item: item["id_producto"],
+    )
+    products_json = json.dumps(normalized_products)
+
+    inserted = db.execute(
+        text("""
+            INSERT INTO inventarios.devoluciones_venta (
+                id_devolucion,
+                id_pedido,
+                id_sede,
+                id_almacen,
+                productos
+            )
+            VALUES (
+                :id_devolucion,
+                :id_pedido,
+                :id_sede,
+                :id_almacen,
+                CAST(:productos AS JSONB)
+            )
+            ON CONFLICT (id_devolucion) DO NOTHING
+            RETURNING id_devolucion
+        """),
+        {
+            "id_devolucion": id_devolucion,
+            "id_pedido": id_pedido,
+            "id_sede": id_sede,
+            "id_almacen": id_almacen,
+            "productos": products_json,
+        },
+    ).scalar_one_or_none()
+
+    if inserted is None:
+        existing = db.execute(
+            text("""
+                SELECT id_pedido, id_sede, id_almacen, productos
+                FROM inventarios.devoluciones_venta
+                WHERE id_devolucion = :id_devolucion
+            """),
+            {"id_devolucion": id_devolucion},
+        ).mappings().one()
+        existing_products = sorted(
+            existing["productos"],
+            key=lambda item: item["id_producto"],
+        )
+        if (
+            existing["id_pedido"] != id_pedido
+            or existing["id_sede"] != id_sede
+            or existing["id_almacen"] != id_almacen
+            or existing_products != normalized_products
+        ):
+            raise ValueError(
+                "La devolución ya fue procesada con datos diferentes"
+            )
+
+        return {
+            "id_devolucion": id_devolucion,
+            "id_pedido": id_pedido,
+            "id_sede": id_sede,
+            "id_almacen": id_almacen,
+            "productos": normalized_products,
+            "already_returned": True,
+        }
+
+    for product in normalized_products:
+        updated = db.execute(
+            text("""
+                UPDATE inventarios.inventarios
+                SET existencia_actual = existencia_actual + :cantidad,
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                WHERE id_sede = :id_sede
+                  AND id_almacen = :id_almacen
+                  AND id_producto = :id_producto
+                RETURNING id_producto
+            """),
+            {
+                "id_sede": id_sede,
+                "id_almacen": id_almacen,
+                "id_producto": product["id_producto"],
+                "cantidad": product["cantidad"],
+            },
+        ).mappings().first()
+        if updated is None:
+            raise ValueError(
+                f"No existe inventario para el producto "
+                f"{product['id_producto']} en el almacén indicado"
+            )
+
+    return {
+        "id_devolucion": id_devolucion,
+        "id_pedido": id_pedido,
+        "id_sede": id_sede,
+        "id_almacen": id_almacen,
+        "productos": normalized_products,
+        "already_returned": False,
+    }

@@ -59,6 +59,12 @@ export function InventoryPage({ view = 'stock' }: { view?: 'stock' | 'alerts' | 
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    const refreshInventory = () => { void load() }
+    window.addEventListener('retail:inventory-updated', refreshInventory)
+    return () => window.removeEventListener('retail:inventory-updated', refreshInventory)
+  }, [load])
+
   async function showTransfer(row: Row) {
     setSelectedTransfer(row)
     setModal('transferDetails')

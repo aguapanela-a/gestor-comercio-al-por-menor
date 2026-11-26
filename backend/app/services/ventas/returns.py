@@ -189,13 +189,67 @@ def _resolve_return(
         if row is None:
             db.rollback()
             raise HTTPException(status_code=404, detail="Devolución no encontrada")
+
+        if approve:
+            order = get_order(db, row["id_pedido"])
+            if order is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="No fue posible encontrar el pedido de la devolución",
+                )
+            products = [
+                {
+                    "id_producto": item["id_producto"],
+                    "cantidad": item["cantidad"],
+                }
+                for item in list_return_details(db, id_devolucion)
+                if item["condicion_producto"] == "buen_estado"
+            ]
+            authorization = request.headers.get("authorization", "")
+            scheme, _, bearer_token = authorization.partition(" ")
+            if scheme.lower() != "bearer" or not bearer_token:
+                raise HTTPException(status_code=401, detail="Credenciales no válidas")
+            try:
+                request_service(
+                    "inventarios",
+                    "POST",
+                    "/stock/sales-returns",
+                    bearer_token=bearer_token,
+                    json_body={
+                        "id_devolucion": id_devolucion,
+                        "id_pedido": row["id_pedido"],
+                        "id_sede": order["id_sede"],
+                        "id_almacen": order["id_almacen"],
+                        "productos": products,
+                    },
+                )
+            except RemoteServiceError as error:
+                if error.status_code in (409, 422):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "No fue posible aprobar la devolución porque "
+                            f"Inventarios rechazó el reintegro: {error}"
+                        ),
+                    ) from None
+                raise HTTPException(
+                    status_code=503,
+                    detail="No fue posible confirmar el reintegro en Inventarios",
+                ) from None
+
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(error)) from None
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible resolver la devolución") from None
+    except Exception:
+        db.rollback()
+        raise
     set_audit_details(
         request,
         object_type="ventas.devoluciones",

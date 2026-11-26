@@ -11,11 +11,13 @@ from app.services.inventarios.repositories import (
     adjust_inventory,
     dispatch_sales_order,
     list_inventory,
+    register_sales_return,
     update_stock_minimum,
 )
 from app.services.inventarios.schemas import (
     InventoryResponse,
     SalesDispatchCreate,
+    SalesReturnCreate,
     StockAdjustment,
     StockMinimumUpdate,
 )
@@ -318,6 +320,72 @@ def dispatch_paid_order(
         details={
             "operacion": "despacho_venta",
             "ya_despachado": result["already_dispatched"],
+        },
+    )
+
+    return result
+
+
+@router.post(
+    "/sales-returns",
+    status_code=status.HTTP_200_OK,
+)
+def register_returned_order_stock(
+    data: SalesReturnCreate,
+    request: Request,
+    db: Session = Depends(get_inventarios_db),
+) -> dict:
+    warehouse = _validate_remote_resource(
+        request,
+        "organizacion",
+        f"/warehouses/{data.id_almacen}",
+        data.id_almacen,
+        "id_almacen",
+    )
+    if warehouse.get("id_sede") != data.id_sede:
+        raise HTTPException(
+            status_code=422,
+            detail="El almacén no pertenece a la sede indicada",
+        )
+
+    try:
+        set_local_transaction_timeouts(db)
+        result = register_sales_return(
+            db,
+            id_devolucion=data.id_devolucion,
+            id_pedido=data.id_pedido,
+            id_sede=data.id_sede,
+            id_almacen=data.id_almacen,
+            products=[
+                {
+                    "id_producto": item.id_producto,
+                    "cantidad": item.cantidad,
+                }
+                for item in data.productos
+            ],
+        )
+        db.commit()
+    except ValueError as error:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No fue posible registrar el reintegro de la devolución",
+        ) from None
+    except Exception:
+        db.rollback()
+        raise
+
+    set_audit_details(
+        request,
+        object_type="inventarios.devoluciones_venta",
+        object_id=data.id_devolucion,
+        after=result,
+        details={
+            "operacion": "reintegro_devolucion_venta",
+            "ya_procesada": result["already_returned"],
         },
     )
 

@@ -91,3 +91,44 @@ class TransferDetailResponse(BaseModel):
     id_producto: int
     cantidad_enviada: int
     cantidad_recibida: int | None
+
+
+
+class SalesDispatchItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_producto: int = Field(gt=0)
+    cantidad: int = Field(gt=0)
+
+
+class SalesDispatchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_pedido: int = Field(gt=0)
+    id_sede: int = Field(gt=0)
+    id_almacen: int = Field(gt=0)
+    productos: list[SalesDispatchItemInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_products(self) -> "SalesDispatchCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self
+
+
+class SalesReturnCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_devolucion: int = Field(gt=0)
+    id_pedido: int = Field(gt=0)
+    id_sede: int = Field(gt=0)
+    id_almacen: int = Field(gt=0)
+    productos: list[SalesDispatchItemInput]
+
+    @model_validator(mode="after")
+    def validate_products(self) -> "SalesReturnCreate":
+        ids = [item.id_producto for item in self.productos]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Cada producto debe aparecer una sola vez")
+        return self

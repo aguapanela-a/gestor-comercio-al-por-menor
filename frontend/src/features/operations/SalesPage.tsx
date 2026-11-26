@@ -111,6 +111,9 @@ export function SalesPage({ view = 'orders' }: { view?: 'orders' | 'returns' }) 
     if (!window.confirm(`¿${action === 'approve' ? 'Aprobar' : 'Rechazar'} la devolución ${id}?`)) return
     try {
       await api.ventas.post(`/returns/${id}/${action}`)
+      if (action === 'approve' && selected) {
+        window.dispatchEvent(new Event('retail:inventory-updated'))
+      }
       setNotice({ kind: 'success', text: `Devolución ${action === 'approve' ? 'aprobada' : 'rechazada'}.` })
       if (selected) await showReturns(selected)
     } catch (error) {
