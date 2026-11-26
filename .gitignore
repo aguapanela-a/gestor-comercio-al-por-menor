@@ -15,3 +15,7 @@ coverage/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Archivos locales de auditoria
+/backend-auditoria.zip
+/cambios_pendientes.patch
