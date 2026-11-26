@@ -1,7 +1,10 @@
-from datetime import datetime
+from uuid import UUID
+import json
+from datetime import datetime, timezone
 from typing import Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 IdentityState = Literal["activo", "inactivo"]
@@ -99,6 +102,32 @@ class AccessAuditResponse(BaseModel):
     fecha_hora: datetime
     accion: str | None
     objeto_consultado: str | None
+    event_id: UUID | str | None = None
+    microservicio: str
+    modulo: str
+    tipo_objeto: str | None
+    id_objeto: str | None
+    resultado: Literal["SUCCESS", "FAILURE", "DENIED"]
+    metodo_http: str | None
+    ruta: str | None
+    direccion_ip: str | None
+    correlation_id: UUID | str | None
+    detalles: dict[str, Any]
+    nombre_usuario: str | None = None
+    nombre_completo: str | None = None
+
+    @field_validator("detalles", mode="before")
+    @classmethod
+    def decode_details(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, dict):
+            raise ValueError("Los detalles de auditorÃ­a deben ser un objeto JSON")
+        return value
+
+    @field_serializer("fecha_hora")
+    def serialize_timestamp(self, value: datetime) -> datetime:
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 __all__ = [

@@ -131,7 +131,7 @@ def test_product_supplier_write_checks_catalog_service(
         "plazo_entrega_dias": 3,
         "estado": "activo",
     }
-    db = FakeDatabaseSession(FakeResult([supplier]), FakeResult([relation]))
+    db = FakeDatabaseSession(FakeResult(), FakeResult([supplier]), FakeResult([relation]))
     monkeypatch.setitem(app.dependency_overrides, get_compras_db, lambda: db)
     calls = []
 
@@ -154,5 +154,5 @@ def test_product_supplier_write_checks_catalog_service(
 
     assert response.status_code == 200
     assert calls == [("catalogo", "GET", "/products/4")]
-    assert "ON CONFLICT (id_producto, id_proveedor)" in db.statements[1][0]
+    assert "ON CONFLICT (id_producto, id_proveedor)" in db.statements[2][0]
     assert db.commits == 1

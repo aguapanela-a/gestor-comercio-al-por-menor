@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import DateTime, Integer, bindparam, text
 from sqlalchemy.orm import Session
 
 
@@ -12,6 +13,14 @@ EMPLOYEE_COLUMNS = {
     "correo",
     "estado",
 }
+
+
+def _utc_naive(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def list_employees(
@@ -226,9 +235,16 @@ def list_access_audit(
     id_usuario: int,
     limit: int,
     offset: int,
+    id_usuario_filtro: int | None = None,
+    microservicio: str | None = None,
+    modulo: str | None = None,
+    accion: str | None = None,
+    resultado: str | None = None,
+    fecha_desde: datetime | None = None,
+    fecha_hasta: datetime | None = None,
+    texto: str | None = None,
 ) -> list[dict[str, Any]]:
-    rows = db.execute(
-        text("""
+    query = text("""
             WITH global_audit_access AS (
                 SELECT EXISTS (
                     SELECT 1
@@ -246,43 +262,71 @@ def list_access_audit(
                    audit.id_usuario,
                    audit.fecha_hora,
                    audit.accion,
-                   audit.objeto_consultado
+                   audit.objeto_consultado,
+                   audit.event_id,
+                   audit.microservicio,
+                   audit.modulo,
+                   audit.tipo_objeto,
+                   audit.id_objeto,
+                   audit.resultado,
+                   audit.metodo_http,
+                   audit.ruta,
+                   audit.direccion_ip,
+                   audit.correlation_id,
+                   audit.detalles,
+                   users.nombre_usuario,
+                   employees.nombre_completo
             FROM identidad.auditoria_accesos AS audit
             CROSS JOIN global_audit_access AS access
-            WHERE access.allowed OR audit.id_usuario = :id_usuario
+            LEFT JOIN identidad.usuarios AS users
+              ON users.id_usuario = audit.id_usuario
+            LEFT JOIN identidad.empleados AS employees
+              ON employees.id_empleado = users.id_empleado
+            WHERE (
+                    (access.allowed AND
+                     (CAST(:id_usuario_filtro AS INTEGER) IS NULL OR audit.id_usuario = CAST(:id_usuario_filtro AS INTEGER)))
+                    OR
+                    (NOT access.allowed AND audit.id_usuario = :id_usuario)
+                  )
+              AND (CAST(:microservicio AS TEXT) IS NULL OR audit.microservicio = CAST(:microservicio AS TEXT))
+              AND (CAST(:modulo AS TEXT) IS NULL OR audit.modulo = CAST(:modulo AS TEXT))
+              AND (CAST(:accion AS TEXT) IS NULL OR LOWER(audit.accion) LIKE CAST(:accion AS TEXT))
+              AND (CAST(:resultado AS TEXT) IS NULL OR audit.resultado = CAST(:resultado AS TEXT))
+              AND (:fecha_desde IS NULL OR audit.fecha_hora >= :fecha_desde)
+              AND (:fecha_hasta IS NULL OR audit.fecha_hora <= :fecha_hasta)
+              AND (
+                    CAST(:texto AS TEXT) IS NULL
+                    OR LOWER(COALESCE(audit.objeto_consultado, '')) LIKE CAST(:texto AS TEXT)
+                    OR LOWER(COALESCE(audit.tipo_objeto, '')) LIKE CAST(:texto AS TEXT)
+                    OR LOWER(COALESCE(audit.id_objeto, '')) LIKE CAST(:texto AS TEXT)
+                    OR LOWER(COALESCE(audit.ruta, '')) LIKE CAST(:texto AS TEXT)
+                    OR LOWER(COALESCE(audit.accion, '')) LIKE CAST(:texto AS TEXT)
+                  )
             ORDER BY audit.fecha_hora DESC, audit.id_auditoria DESC
             LIMIT :limit OFFSET :offset
-        """),
+        """).bindparams(
+        bindparam("fecha_desde", type_=DateTime()),
+        bindparam("fecha_hasta", type_=DateTime()),
+    )
+    rows = db.execute(
+        query,
         {
             "id_usuario": id_usuario,
             "auditor_role": "auditor",
             "administrator_role": "administrador",
+            "id_usuario_filtro": id_usuario_filtro,
+            "microservicio": microservicio,
+            "modulo": modulo,
+            "accion": f"%{accion.lower()}%" if accion else None,
+            "resultado": resultado,
+            "fecha_desde": _utc_naive(fecha_desde),
+            "fecha_hasta": _utc_naive(fecha_hasta),
+            "texto": f"%{texto.lower()}%" if texto else None,
             "limit": limit,
             "offset": offset,
         },
     ).mappings().all()
     return [dict(row) for row in rows]
-
-
-def record_access(
-    db: Session,
-    *,
-    id_usuario: int,
-    accion: str,
-    objeto_consultado: str,
-) -> None:
-    db.execute(
-        text("""
-            INSERT INTO identidad.auditoria_accesos
-                (id_usuario, accion, objeto_consultado)
-            VALUES (:id_usuario, :accion, :objeto_consultado)
-        """),
-        {
-            "id_usuario": id_usuario,
-            "accion": accion,
-            "objeto_consultado": objeto_consultado,
-        },
-    )
 
 
 def get_user_profile(db: Session, id_usuario: int) -> dict[str, Any] | None:

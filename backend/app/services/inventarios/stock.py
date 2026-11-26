@@ -19,6 +19,7 @@ from app.services.inventarios.schemas import (
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
 from app.shared.transactions import set_local_transaction_timeouts
+from app.shared.audit import set_audit_details
 
 router = APIRouter(
     prefix="/stock",
@@ -108,6 +109,15 @@ def set_stock_quantity(
         "id_almacen",
         require_active=True,
     )
+    before_rows = list_inventory(
+        db,
+        id_producto=data.id_producto,
+        id_sede=warehouse["id_sede"],
+        id_almacen=data.id_almacen,
+        below_minimum=None,
+        limit=1,
+        offset=0,
+    )
     try:
         set_local_transaction_timeouts(db)
         row = adjust_inventory(
@@ -121,6 +131,14 @@ def set_stock_quantity(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible ajustar las existencias") from None
+    set_audit_details(
+        request,
+        object_type="inventarios.inventarios",
+        object_id=f"{data.id_almacen}:{data.id_producto}",
+        before=before_rows[0] if before_rows else None,
+        after=row,
+        details={"operacion": "ajuste_existencias"},
+    )
     return InventoryResponse.model_validate(row)
 
 
@@ -136,6 +154,15 @@ def set_stock_minimum(
         f"/products/{data.id_producto}",
         data.id_producto,
         "id_producto",
+    )
+    before_rows = list_inventory(
+        db,
+        id_producto=data.id_producto,
+        id_sede=None,
+        id_almacen=data.id_almacen,
+        below_minimum=None,
+        limit=1,
+        offset=0,
     )
     _validate_remote_resource(
         request,
@@ -158,6 +185,14 @@ def set_stock_minimum(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible actualizar el nivel mínimo") from None
+    set_audit_details(
+        request,
+        object_type="inventarios.inventarios",
+        object_id=f"{data.id_almacen}:{data.id_producto}",
+        before=before_rows[0] if before_rows else None,
+        after=row,
+        details={"operacion": "actualizar_stock_minimo"},
+    )
     return InventoryResponse.model_validate(row)
 
 

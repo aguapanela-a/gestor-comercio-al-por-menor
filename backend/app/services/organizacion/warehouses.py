@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.services.organizacion.schemas import (
     WarehouseType,
     WarehouseUpdate,
 )
+from app.shared.audit import set_audit_details
 
 router = APIRouter(prefix="/warehouses", tags=["Almacenes"])
 
@@ -73,6 +74,7 @@ def read_warehouse(
 @router.post("", response_model=WarehouseResponse, status_code=status.HTTP_201_CREATED)
 def add_warehouse(
     data: WarehouseCreate,
+    request: Request,
     db: Session = Depends(get_organizacion_db),
 ) -> WarehouseResponse:
     if not site_exists(db, data.id_sede):
@@ -86,6 +88,12 @@ def add_warehouse(
             status_code=409,
             detail="Ya existe un almacén con ese nombre en la sede",
         ) from None
+    set_audit_details(
+        request,
+        object_type="organizacion.almacenes",
+        object_id=row["id_almacen"],
+        after=row,
+    )
     return WarehouseResponse.model_validate(row)
 
 
@@ -93,8 +101,10 @@ def add_warehouse(
 def edit_warehouse(
     id_almacen: Annotated[int, Path(gt=0)],
     data: WarehouseUpdate,
+    request: Request,
     db: Session = Depends(get_organizacion_db),
 ) -> WarehouseResponse:
+    before = get_warehouse(db, id_almacen)
     values = data.model_dump(exclude_unset=True)
     if any(value is None for value in values.values()):
         raise HTTPException(status_code=422, detail="Los campos no aceptan null")
@@ -112,14 +122,23 @@ def edit_warehouse(
             status_code=409,
             detail="El almacén entra en conflicto con datos existentes",
         ) from None
+    set_audit_details(
+        request,
+        object_type="organizacion.almacenes",
+        object_id=id_almacen,
+        before=before,
+        after=row,
+    )
     return WarehouseResponse.model_validate(row)
 
 
 @router.delete("/{id_almacen}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_warehouse(
     id_almacen: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_organizacion_db),
 ) -> None:
+    before = get_warehouse(db, id_almacen)
     try:
         row = update_warehouse(db, id_almacen, {"estado": "inactivo"})
         if row is None:
@@ -129,3 +148,10 @@ def deactivate_warehouse(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible inactivar el almacén") from None
+    set_audit_details(
+        request,
+        object_type="organizacion.almacenes",
+        object_id=id_almacen,
+        before=before,
+        after=row,
+    )

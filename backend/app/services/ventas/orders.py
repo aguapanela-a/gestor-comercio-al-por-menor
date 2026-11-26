@@ -22,6 +22,7 @@ from app.services.ventas.schemas import (
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
 from app.shared.transactions import set_local_transaction_timeouts
+from app.shared.audit import set_audit_details
 
 router = APIRouter(prefix="/orders", tags=["Pedidos"])
 
@@ -181,6 +182,13 @@ def add_order(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible crear el pedido") from None
+    set_audit_details(
+        request,
+        object_type="ventas.pedidos",
+        object_id=row["id_pedido"],
+        after=row,
+        details={"productos": products},
+    )
     return OrderResponse.model_validate(row)
 
 

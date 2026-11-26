@@ -228,7 +228,6 @@ tbody tr:hover { background: #fbfcfc; }
 .service-online, .service-online + span { color: #287459; }
 .service-online .service-indicator { color: #287459; }
 .service-offline { color: #9a6357; }
-.service-future { background: #fbfcfc; }
 
 .empty-feature { display: flex; min-height: 290px; flex-direction: column; align-items: center; justify-content: center; padding: 35px; border: 1px dashed #cfdad6; border-radius: 6px; background: #fff; text-align: center; }
 .empty-feature-mark { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 8px; background: #edf4f1; color: var(--green); font-family: Manrope, sans-serif; font-size: 22px; font-weight: 800; }
@@ -398,5 +397,50 @@ tbody tr:hover { background: #fbfcfc; }
   .report-selector {
     grid-template-columns: 1fr;
   }
+}
+
+.audit-filter-input {
+  min-width: 120px;
+  min-height: 35px;
+  flex: 0 1 150px;
+  padding: 7px 9px;
+  border: 1px solid #dfe6e3;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.audit-date-field {
+  flex: 0 1 205px;
+}
+
+.audit-date-field input {
+  min-height: 35px;
+  padding: 6px 8px;
+  border: 1px solid #dfe6e3;
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.audit-object-id {
+  display: block;
+  max-width: 230px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.audit-details {
+  max-width: 420px;
+  max-height: 260px;
+  overflow: auto;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  color: var(--ink);
+  font-size: 10px;
 }
 

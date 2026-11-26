@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from app.services.catalogo.schemas import (
     ProductResponse,
     ProductUpdate,
 )
+from app.shared.audit import set_audit_details
 
 router = APIRouter(prefix="/products", tags=["Productos"])
 
@@ -70,6 +71,7 @@ def read_product(
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 def add_product(
     data: ProductCreate,
+    request: Request,
     db: Session = Depends(get_catalogo_db),
 ) -> ProductResponse:
     if not category_exists(db, data.id_categoria):
@@ -83,6 +85,12 @@ def add_product(
             status_code=409,
             detail="El SKU ya existe o el producto entra en conflicto con datos existentes",
         ) from None
+    set_audit_details(
+        request,
+        object_type="catalogo.productos",
+        object_id=row["id_producto"],
+        after=row,
+    )
     return ProductResponse.model_validate(row)
 
 
@@ -90,8 +98,10 @@ def add_product(
 def edit_product(
     id_producto: Annotated[int, Path(gt=0)],
     data: ProductUpdate,
+    request: Request,
     db: Session = Depends(get_catalogo_db),
 ) -> ProductResponse:
+    before = get_product(db, id_producto)
     values = data.model_dump(exclude_unset=True)
     if any(value is None for value in values.values()):
         raise HTTPException(status_code=422, detail="Los campos no aceptan null")
@@ -109,14 +119,23 @@ def edit_product(
             status_code=409,
             detail="El SKU ya existe o el producto entra en conflicto con datos existentes",
         ) from None
+    set_audit_details(
+        request,
+        object_type="catalogo.productos",
+        object_id=id_producto,
+        before=before,
+        after=row,
+    )
     return ProductResponse.model_validate(row)
 
 
 @router.delete("/{id_producto}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_product(
     id_producto: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_catalogo_db),
 ) -> None:
+    before = get_product(db, id_producto)
     try:
         row = update_product(db, id_producto, {"estado": "inactivo"})
         if row is None:
@@ -126,3 +145,10 @@ def deactivate_product(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible inactivar el producto") from None
+    set_audit_details(
+        request,
+        object_type="catalogo.productos",
+        object_id=id_producto,
+        before=before,
+        after=row,
+    )

@@ -22,6 +22,7 @@ from app.services.compras.schemas import (
 )
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
+from app.shared.audit import set_audit_details
 from app.shared.transactions import set_local_transaction_timeouts
 
 router = APIRouter(prefix="/purchase-orders", tags=["Órdenes de compra"])
@@ -134,6 +135,13 @@ def add_purchase_order(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible crear la orden") from None
+    set_audit_details(
+        request,
+        object_type="compras.ordenes_compra",
+        object_id=row["id_orden_compra"],
+        after=row,
+        details={"productos": order_products},
+    )
     return PurchaseOrderResponse.model_validate(row)
 
 
@@ -187,10 +195,12 @@ def read_purchase_order_details(
 @router.post("/{id_orden_compra}/cancel", response_model=PurchaseOrderResponse)
 def cancel_order(
     id_orden_compra: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_compras_db),
 ) -> PurchaseOrderResponse:
     try:
         set_local_transaction_timeouts(db)
+        before = get_purchase_order(db, id_orden_compra)
         row = cancel_purchase_order(db, id_orden_compra)
         if row is None:
             existing = get_purchase_order(db, id_orden_compra)
@@ -205,4 +215,11 @@ def cancel_order(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible cancelar la orden") from None
+    set_audit_details(
+        request,
+        object_type="compras.ordenes_compra",
+        object_id=id_orden_compra,
+        before=before,
+        after=row,
+    )
     return PurchaseOrderResponse.model_validate(row)

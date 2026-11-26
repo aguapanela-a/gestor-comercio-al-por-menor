@@ -3,6 +3,11 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.shared.audit import (
+    crear_token_delegacion,
+    current_audit_correlation_id,
+    current_audit_service,
+)
 from app.shared.exceptions import RemoteServiceError
 
 SERVICE_URL_SETTINGS = {
@@ -29,6 +34,16 @@ def request_service(
         raise ValueError(f"Unknown service: {service}")
     base_url = getattr(settings, setting_name).rstrip("/")
     headers = {"Authorization": f"Bearer {bearer_token}"}
+    correlation_id = current_audit_correlation_id.get()
+    if correlation_id is not None:
+        headers["X-Correlation-ID"] = correlation_id
+    caller_service = current_audit_service.get()
+    if correlation_id is not None and caller_service is not None:
+        headers["X-Audit-Delegation"] = crear_token_delegacion(
+            caller_service,
+            correlation_id,
+            service,
+        )
 
     try:
         with httpx.Client(timeout=settings.service_http_timeout_seconds) as client:

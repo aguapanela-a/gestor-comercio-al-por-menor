@@ -91,6 +91,18 @@ def test_site_delete_is_a_soft_deactivation(
                     "estado": "inactivo",
                 }
             ]
+        ),
+        FakeResult(
+            [
+                {
+                    "id_sede": 2,
+                    "nombre": "Sede",
+                    "ciudad": "Cali",
+                    "direccion": "Centro",
+                    "tipo_sede": "comercial",
+                    "estado": "inactivo",
+                }
+            ]
         )
     )
     monkeypatch.setitem(app.dependency_overrides, get_organizacion_db, lambda: db)
@@ -102,5 +114,5 @@ def test_site_delete_is_a_soft_deactivation(
         )
 
     assert response.status_code == 204
-    assert "UPDATE organizacion.sedes" in db.statements[0][0]
-    assert db.statements[0][1]["estado"] == "inactivo"
+    assert "UPDATE organizacion.sedes" in db.statements[1][0]
+    assert db.statements[1][1]["estado"] == "inactivo"

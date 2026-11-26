@@ -95,4 +95,6 @@ def get_current_user(
 
     if not isinstance(payload.get("sub"), str) or not payload["sub"]:
         raise unauthorized
+    if payload.get("token_use") in {"audit_ingest", "audit_delegation"}:
+        raise unauthorized
     return payload

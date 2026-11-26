@@ -4,6 +4,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
+
+
+@pytest.fixture(autouse=True)
+def disable_external_audit_services(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "audit_capture_enabled", False)
+
 
 @pytest.fixture
 def assert_health_endpoints(

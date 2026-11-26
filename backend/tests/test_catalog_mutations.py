@@ -51,14 +51,23 @@ def test_category_delete_deactivates_instead_of_removing_record(
     monkeypatch: pytest.MonkeyPatch,
     auth_token: str,
 ) -> None:
-    category = {
+    before = {
+        "id_categoria": 3,
+        "nombre": "Bebidas",
+        "descripcion": None,
+        "estado": "activo",
+    }
+    after = {
         "id_categoria": 3,
         "nombre": "Bebidas",
         "descripcion": None,
         "estado": "inactivo",
     }
-    db = FakeDatabaseSession(FakeResult([category]))
+    db = FakeDatabaseSession(FakeResult([before]), FakeResult([after]))
     monkeypatch.setitem(app.dependency_overrides, get_catalogo_db, lambda: db)
+    monkeypatch.setattr(settings, "audit_capture_enabled", True)
+    events = []
+    monkeypatch.setattr("app.shared.audit.registrar_evento", events.append)
 
     with TestClient(app) as client:
         response = client.delete(
@@ -67,10 +76,16 @@ def test_category_delete_deactivates_instead_of_removing_record(
         )
 
     assert response.status_code == 204
-    query, parameters = db.statements[0]
+    query, parameters = db.statements[1]
     assert "UPDATE catalogo.categorias" in query
     assert parameters["estado"] == "inactivo"
     assert db.commits == 1
+    assert events[0]["id_usuario"] == 1
+    assert events[0]["tipo_objeto"] == "catalogo.categorias"
+    assert events[0]["detalles"]["cambios"] == {
+        "antes": before,
+        "despues": after,
+    }
 
 
 def test_product_create_requires_existing_category(
@@ -88,6 +103,9 @@ def test_product_create_requires_existing_category(
     }
     db = FakeDatabaseSession(FakeResult([{"1": 1}]), FakeResult([product]))
     monkeypatch.setitem(app.dependency_overrides, get_catalogo_db, lambda: db)
+    monkeypatch.setattr(settings, "audit_capture_enabled", True)
+    events = []
+    monkeypatch.setattr("app.shared.audit.registrar_evento", events.append)
 
     with TestClient(app) as client:
         response = client.post(
@@ -106,3 +124,40 @@ def test_product_create_requires_existing_category(
     assert response.json()["id_producto"] == 4
     assert "catalogo.categorias" in db.statements[0][0]
     assert db.commits == 1
+    assert events[0]["tipo_objeto"] == "catalogo.productos"
+    assert events[0]["id_objeto"] == "4"
+    assert events[0]["detalles"]["cambios"]["despues"]["id_producto"] == 4
+
+
+def test_product_update_audits_before_and_after_values(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
+) -> None:
+    before = {
+        "id_producto": 4,
+        "sku": "P-4",
+        "nombre": "Nombre anterior",
+        "id_categoria": 3,
+        "unidad_medida": "unidad",
+        "precio_lista": "10.00",
+        "estado": "activo",
+    }
+    after = {**before, "nombre": "Nombre actualizado"}
+    db = FakeDatabaseSession(FakeResult([before]), FakeResult([after]))
+    monkeypatch.setitem(app.dependency_overrides, get_catalogo_db, lambda: db)
+    monkeypatch.setattr(settings, "audit_capture_enabled", True)
+    events = []
+    monkeypatch.setattr("app.shared.audit.registrar_evento", events.append)
+
+    with TestClient(app) as client:
+        response = client.patch(
+            "/products/4",
+            json={"nombre": "Nombre actualizado"},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+    assert response.status_code == 200
+    assert events[0]["detalles"]["cambios"] == {
+        "antes": before,
+        "despues": after,
+    }

@@ -8,6 +8,7 @@ from app.services.compras.dependencies import get_compras_db
 from app.services.compras.repositories import (
     create_supplier,
     deactivate_product_supplier,
+    get_product_supplier,
     get_supplier,
     list_product_suppliers,
     list_suppliers,
@@ -24,6 +25,7 @@ from app.services.compras.schemas import (
 )
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
+from app.shared.audit import set_audit_details
 
 router = APIRouter(tags=["Proveedores"])
 
@@ -105,6 +107,7 @@ def read_supplier(
 )
 def add_supplier(
     data: SupplierCreate,
+    request: Request,
     db: Session = Depends(get_compras_db),
 ) -> SupplierResponse:
     try:
@@ -116,6 +119,12 @@ def add_supplier(
             status_code=409,
             detail="La identificación o razón social ya existe",
         ) from None
+    set_audit_details(
+        request,
+        object_type="compras.proveedores",
+        object_id=row["id_proveedor"],
+        after=row,
+    )
     return SupplierResponse.model_validate(row)
 
 
@@ -123,8 +132,10 @@ def add_supplier(
 def edit_supplier(
     id_proveedor: Annotated[int, Path(gt=0)],
     data: SupplierUpdate,
+    request: Request,
     db: Session = Depends(get_compras_db),
 ) -> SupplierResponse:
+    before = get_supplier(db, id_proveedor)
     values = data.model_dump(exclude_unset=True)
     try:
         row = update_supplier(db, id_proveedor, values)
@@ -138,19 +149,35 @@ def edit_supplier(
             status_code=409,
             detail="La identificación o razón social ya existe",
         ) from None
+    set_audit_details(
+        request,
+        object_type="compras.proveedores",
+        object_id=id_proveedor,
+        before=before,
+        after=row,
+    )
     return SupplierResponse.model_validate(row)
 
 
 @router.delete("/suppliers/{id_proveedor}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_supplier(
     id_proveedor: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_compras_db),
 ) -> None:
+    before = get_supplier(db, id_proveedor)
     row = update_supplier(db, id_proveedor, {"estado": "inactivo"})
     if row is None:
         db.rollback()
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
     _commit_or_conflict(db)
+    set_audit_details(
+        request,
+        object_type="compras.proveedores",
+        object_id=id_proveedor,
+        before=before,
+        after=row,
+    )
 
 
 @router.get("/product-suppliers", response_model=list[ProductSupplierResponse])
@@ -184,6 +211,11 @@ def save_product_supplier(
     request: Request,
     db: Session = Depends(get_compras_db),
 ) -> ProductSupplierResponse:
+    before = get_product_supplier(
+        db,
+        id_producto=id_producto,
+        id_proveedor=id_proveedor,
+    )
     supplier = get_supplier(db, id_proveedor)
     if supplier is None:
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
@@ -201,6 +233,13 @@ def save_product_supplier(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible guardar la relación") from None
+    set_audit_details(
+        request,
+        object_type="compras.producto_proveedor",
+        object_id=f"{id_producto}:{id_proveedor}",
+        before=before,
+        after=row,
+    )
     return ProductSupplierResponse.model_validate(row)
 
 
@@ -211,8 +250,14 @@ def save_product_supplier(
 def deactivate_product_supplier_link(
     id_producto: Annotated[int, Path(gt=0)],
     id_proveedor: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_compras_db),
 ) -> None:
+    before = get_product_supplier(
+        db,
+        id_producto=id_producto,
+        id_proveedor=id_proveedor,
+    )
     row = deactivate_product_supplier(
         db,
         id_producto=id_producto,
@@ -222,3 +267,10 @@ def deactivate_product_supplier_link(
         db.rollback()
         raise HTTPException(status_code=404, detail="Relación producto-proveedor no encontrada")
     _commit_or_conflict(db)
+    set_audit_details(
+        request,
+        object_type="compras.producto_proveedor",
+        object_id=f"{id_producto}:{id_proveedor}",
+        before=before,
+        after=row,
+    )

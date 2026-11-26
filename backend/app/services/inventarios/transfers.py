@@ -25,6 +25,7 @@ from app.services.inventarios.schemas import (
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
 from app.shared.transactions import set_local_transaction_timeouts
+from app.shared.audit import set_audit_details
 
 router = APIRouter(
     prefix="/transfers",
@@ -103,6 +104,13 @@ def add_transfer(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible crear la transferencia") from None
+    set_audit_details(
+        request,
+        object_type="inventarios.transferencias",
+        object_id=row["id_transferencia"],
+        after=row,
+        details={"productos": [item.model_dump(mode="json") for item in data.productos]},
+    )
     return TransferResponse.model_validate(row)
 
 
@@ -152,8 +160,10 @@ def read_transfer_details(
 @router.post("/{id_transferencia}/dispatch", response_model=TransferResponse)
 def dispatch(
     id_transferencia: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_inventarios_db),
 ) -> TransferResponse:
+    before = get_transfer(db, id_transferencia)
     try:
         set_local_transaction_timeouts(db)
         row = dispatch_transfer(db, id_transferencia)
@@ -167,6 +177,14 @@ def dispatch(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible despachar la transferencia") from None
+    set_audit_details(
+        request,
+        object_type="inventarios.transferencias",
+        object_id=id_transferencia,
+        before=before,
+        after=row,
+        details={"operacion": "despacho"},
+    )
     return TransferResponse.model_validate(row)
 
 
@@ -181,6 +199,7 @@ def receive(
     transfer = get_transfer(db, id_transferencia)
     if transfer is None:
         raise HTTPException(status_code=404, detail="Transferencia no encontrada")
+    before_details = list_transfer_details(db, id_transferencia)
     warehouse = _validate_remote_resource(
         request,
         "organizacion",
@@ -209,15 +228,34 @@ def receive(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible registrar la recepción") from None
+    set_audit_details(
+        request,
+        object_type="inventarios.transferencias",
+        object_id=id_transferencia,
+        before={"transferencia": transfer, "detalles": before_details},
+        after=row,
+        details={
+            "operacion": "recepcion",
+            "productos_recibidos": [
+                {
+                    "id_producto": item.id_producto,
+                    "cantidad_total_recibida": item.cantidad_total_recibida,
+                }
+                for item in data.productos
+            ],
+        },
+    )
     return TransferResponse.model_validate(row)
 
 
 @router.post("/{id_transferencia}/cancel", response_model=TransferResponse)
 def cancel(
     id_transferencia: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_inventarios_db),
 ) -> TransferResponse:
     set_local_transaction_timeouts(db)
+    before = get_transfer(db, id_transferencia)
     row = cancel_transfer(db, id_transferencia)
     if row is None:
         existing = get_transfer(db, id_transferencia)
@@ -233,4 +271,12 @@ def cancel(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible cancelar la transferencia") from None
+    set_audit_details(
+        request,
+        object_type="inventarios.transferencias",
+        object_id=id_transferencia,
+        before=before,
+        after=row,
+        details={"operacion": "cancelacion"},
+    )
     return TransferResponse.model_validate(row)

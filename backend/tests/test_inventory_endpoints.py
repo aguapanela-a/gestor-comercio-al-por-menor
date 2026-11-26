@@ -47,6 +47,19 @@ def auth_token(monkeypatch: pytest.MonkeyPatch) -> str:
     return create_access_token({"sub": "1"})
 
 
+def test_inventory_router_registers_all_subrouters_and_requires_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "audit_capture_enabled", False)
+    paths = set(app.openapi()["paths"])
+
+    assert {"/stock", "/stock/alerts", "/transfers"}.issubset(paths)
+    with TestClient(app) as client:
+        response = client.get("/stock")
+
+    assert response.status_code == 401
+
+
 def test_stock_list_uses_filters_and_limits(
     monkeypatch: pytest.MonkeyPatch,
     auth_token: str,
@@ -98,7 +111,7 @@ def test_set_stock_minimum_validates_remote_references(
         "stock_minimo": 12,
         "fecha_actualizacion": datetime(2026, 1, 1),
     }
-    db = FakeDatabaseSession(FakeResult([row]))
+    db = FakeDatabaseSession(FakeResult([row]), FakeResult([row]))
     monkeypatch.setitem(app.dependency_overrides, get_inventarios_db, lambda: db)
     calls = []
 
@@ -121,6 +134,7 @@ def test_set_stock_minimum_validates_remote_references(
         ("organizacion", "GET", "/warehouses/7"),
     ]
     assert "id_almacen = :id_almacen" in db.statements[0][0]
+    assert "UPDATE inventarios.inventarios" in db.statements[1][0]
     assert db.commits == 1
 
 

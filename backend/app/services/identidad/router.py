@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.services.identidad.dependencies import get_identity_db
 from app.services.identidad.schemas import LoginRequest, LoginResponse, UserResponse
+from app.shared.audit import set_audit_details
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(data: LoginRequest, db: Session = Depends(get_identity_db)) -> LoginResponse:
+def login(
+    data: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_identity_db),
+) -> LoginResponse:
     query = text("""
         SELECT u.id_usuario, u.id_empleado, u.nombre_usuario, u.password_hash,
                u.estado AS estado_usuario, e.estado AS estado_empleado,
@@ -23,6 +28,16 @@ def login(data: LoginRequest, db: Session = Depends(get_identity_db)) -> LoginRe
         query,
         {"nombre_usuario": data.nombre_usuario},
     ).mappings().first()
+    audit_context = getattr(request.state, "audit_context", None)
+    if user is not None and audit_context is not None:
+        set_audit_details(
+            request,
+            action="POST /auth/login",
+            object_type="identidad.usuario",
+            object_id=user["id_usuario"],
+            details={"authentication": "login"},
+        )
+        audit_context.actor_id = int(user["id_usuario"])
 
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -57,18 +72,6 @@ def login(data: LoginRequest, db: Session = Depends(get_identity_db)) -> LoginRe
                 "id_usuario": user["id_usuario"],
             },
         )
-
-    db.execute(
-        text("""
-            INSERT INTO identidad.auditoria_accesos (id_usuario, accion, objeto_consultado)
-            VALUES (:id_usuario, :accion, :objeto)
-        """),
-        {
-            "id_usuario": user["id_usuario"],
-            "accion": "inicio_sesion",
-            "objeto": "autenticacion",
-        },
-    )
 
     token = create_access_token(
         {

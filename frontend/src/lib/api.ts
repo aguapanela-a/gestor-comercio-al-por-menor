@@ -49,6 +49,11 @@ Object.values(clients).forEach((client) => {
   client.interceptors.request.use((config) => {
     const token = sessionStorage.getItem(TOKEN_KEY)
     if (token) config.headers.Authorization = `Bearer ${token}`
+    if (!config.headers['X-Correlation-ID']) {
+      config.headers['X-Correlation-ID'] = globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
     return config
   })
   client.interceptors.response.use(
@@ -67,29 +72,46 @@ Object.values(clients).forEach((client) => {
 export const api = clients
 export const serviceUrl = (service: ServiceName) => serviceUrls[service]
 
+
 export function errorMessage(error: unknown): string {
   if (!axios.isAxiosError(error)) {
     return error instanceof Error ? error.message : 'Ocurrió un error inesperado.'
   }
+
   const status = error.response?.status
-  const detail = error.response?.data?.detail
+  const data = error.response?.data
+  const detail = data?.detail
+
+  // La operación quedó confirmada, pero falló la entrega de auditoría.
+  const committed =
+    data?.business_operation_committed === true ||
+    detail?.business_operation_committed === true
+
+  if (status === 503 && committed) {
+    return 'La operación fue realizada y guardada correctamente, pero no se pudo registrar su auditoría. No la repitas. Contacta al administrador para revisar el registro.'
+  }
+
   if (Array.isArray(detail)) {
     return detail.map((item: { msg?: string; loc?: string[] }) =>
       `${item.loc?.slice(-1)[0] ?? 'Campo'}: ${item.msg ?? 'valor inválido'}`,
     ).join(' · ')
   }
+
   if (typeof detail === 'string') {
     if (status === 404) return `No se encontró el recurso. ${detail}`
     if (status === 409) return `Conflicto: ${detail}`
     if (status === 422) return `Revisa los datos: ${detail}`
     return detail
   }
+
   if (status === 401) return 'La sesión terminó. Inicia sesión nuevamente.'
   if (status === 403) return 'Tu cuenta no está activa o no tiene acceso.'
   if (status === 404) return 'No se encontró el recurso solicitado.'
   if (status === 409) return 'La operación entra en conflicto con el estado actual.'
   if (status === 422) return 'Hay campos inválidos. Revisa la información ingresada.'
+  if (status === 503) return 'El servicio no está disponible temporalmente. Comprueba el estado de la operación antes de repetirla.'
   if (status && status >= 500) return 'El servicio presentó un error. Intenta más tarde.'
   if (!error.response) return 'No fue posible conectar con el servicio. Verifica que esté disponible.'
+
   return 'No se pudo completar la solicitud.'
 }

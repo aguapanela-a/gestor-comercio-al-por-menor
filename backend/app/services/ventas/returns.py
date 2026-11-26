@@ -22,6 +22,7 @@ from app.services.ventas.schemas import (
 from app.shared.clients import request_service
 from app.shared.exceptions import RemoteServiceError
 from app.shared.transactions import set_local_transaction_timeouts
+from app.shared.audit import set_audit_details
 
 router = APIRouter(tags=["Devoluciones"])
 
@@ -90,6 +91,27 @@ def request_return(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible solicitar la devolución") from None
+    set_audit_details(
+        request,
+        object_type="ventas.devoluciones",
+        object_id=row["id_devolucion"],
+        before={"id_pedido": id_pedido, "estado_pedido": order["estado"]},
+        after={
+            "id_devolucion": row["id_devolucion"],
+            "id_pedido": row["id_pedido"],
+            "estado": row["estado"],
+        },
+        details={
+            "productos": [
+                {
+                    "id_producto": item.id_producto,
+                    "cantidad": item.cantidad,
+                    "condicion_producto": item.condicion_producto,
+                }
+                for item in data.productos
+            ],
+        },
+    )
     return ReturnResponse.model_validate(row)
 
 
@@ -138,25 +160,29 @@ def read_return_details(
 @router.post("/returns/{id_devolucion}/approve", response_model=ReturnResponse)
 def approve_return(
     id_devolucion: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_ventas_db),
 ) -> ReturnResponse:
-    return _resolve_return(id_devolucion, approve=True, db=db)
+    return _resolve_return(id_devolucion, approve=True, request=request, db=db)
 
 
 @router.post("/returns/{id_devolucion}/reject", response_model=ReturnResponse)
 def reject_return(
     id_devolucion: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_ventas_db),
 ) -> ReturnResponse:
-    return _resolve_return(id_devolucion, approve=False, db=db)
+    return _resolve_return(id_devolucion, approve=False, request=request, db=db)
 
 
 def _resolve_return(
     id_devolucion: int,
     *,
     approve: bool,
+    request: Request,
     db: Session,
 ) -> ReturnResponse:
+    before = get_return(db, id_devolucion)
     try:
         set_local_transaction_timeouts(db)
         row = resolve_return(db, id_devolucion=id_devolucion, approve=approve)
@@ -170,4 +196,12 @@ def _resolve_return(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible resolver la devolución") from None
+    set_audit_details(
+        request,
+        object_type="ventas.devoluciones",
+        object_id=id_devolucion,
+        before=before,
+        after=row,
+        details={"operacion": "aprobacion" if approve else "rechazo"},
+    )
     return ReturnResponse.model_validate(row)

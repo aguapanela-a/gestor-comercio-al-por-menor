@@ -22,6 +22,7 @@ const serviceList: { key: ServiceName; name: string }[] = [
   { key: 'compras', name: 'Compras' },
   { key: 'inventarios', name: 'Inventarios' },
   { key: 'ventas', name: 'Ventas' },
+  { key: 'reportes', name: 'Reportes' },
 ]
 
 const shortcuts = [
@@ -49,8 +50,15 @@ export function HomePage() {
     let active = true
     serviceList.forEach(async ({ key }) => {
       try {
-        const { data } = await api[key].get<{ status?: string }>('/health', { timeout: 3500 })
-        if (active) setHealth((current) => ({ ...current, [key]: data.status === 'running' ? 'online' : 'offline' }))
+        const endpoint = key === 'reportes' ? '/vistas' : '/health'
+        const { data } = await api[key].get<unknown>(endpoint, { timeout: 3500 })
+        const online = key === 'reportes'
+          ? Array.isArray(data)
+          : data !== null
+            && typeof data === 'object'
+            && 'status' in data
+            && data.status === 'running'
+        if (active) setHealth((current) => ({ ...current, [key]: online ? 'online' : 'offline' }))
       } catch {
         if (active) setHealth((current) => ({ ...current, [key]: 'offline' }))
       }
@@ -95,15 +103,10 @@ export function HomePage() {
               <div className="service-row" key={key}>
                 <div className="service-indicator"><StateIcon size={17} className={state === 'checking' ? 'spin' : ''} /></div>
                 <div><strong>{name}</strong><span>{getServiceHost(serviceUrl(key))}</span></div>
-                <span className={`service-state service-${state}`}>{state === 'checking' ? 'Verificando' : state === 'online' ? 'Disponible' : 'Sin conexión'}</span>
+                <span className={`service-state service-${state}`}>{state === 'checking' ? 'Comprobando conexión' : state === 'online' ? 'Conectado' : 'No disponible'}</span>
               </div>
             )
           })}
-          <div className="service-row service-future">
-            <div className="service-indicator"><CircleX size={17} /></div>
-            <div><strong>Reportes</strong><span>API pendiente de integración</span></div>
-            <span className="service-state service-offline">No conectado</span>
-          </div>
         </div>
       </section>
     </>

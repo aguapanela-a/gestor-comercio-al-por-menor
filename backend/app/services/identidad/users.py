@@ -1,8 +1,9 @@
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Literal
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,6 @@ from app.services.identidad.repositories import (
     get_user_with_hash,
     list_access_audit,
     list_users,
-    record_access,
     update_user,
 )
 from app.services.identidad.schemas import (
@@ -29,6 +29,7 @@ from app.services.identidad.schemas import (
     UserCreate,
     UserUpdate,
 )
+from app.shared.audit import set_audit_details
 
 router = APIRouter(
     prefix="/auth",
@@ -51,6 +52,12 @@ def _current_user_id(current_user: dict[str, Any]) -> int:
             detail="Credenciales de autenticación no válidas",
         )
     return int(subject)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _commit_or_conflict(db: Session) -> None:
@@ -97,6 +104,7 @@ def read_current_user(
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     data: PasswordChangeRequest,
+    request: Request,
     current_user: dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_identity_db),
 ) -> None:
@@ -114,13 +122,14 @@ def change_password(
     if not change_user_password(db, id_usuario, hash_password(data.new_password)):
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible cambiar la contraseña")
-    record_access(
-        db,
-        id_usuario=id_usuario,
-        accion="contrasena_cambiada",
-        objeto_consultado=f"usuarios/{id_usuario}",
-    )
     _commit_or_conflict(db)
+    set_audit_details(
+        request,
+        action="POST /auth/password",
+        object_type="identidad.usuarios",
+        object_id=id_usuario,
+        details={"change_type": "password_rotation"},
+    )
 
 
 @router.get("/audit", response_model=list[AccessAuditResponse])
@@ -128,13 +137,38 @@ def read_access_audit(
     current_user: dict[str, Any] = Depends(get_current_user),
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
+    id_usuario: Annotated[int | None, Query(gt=0)] = None,
+    microservicio: Annotated[str | None, Query(max_length=40)] = None,
+    modulo: Annotated[str | None, Query(max_length=80)] = None,
+    accion: Annotated[str | None, Query(max_length=120)] = None,
+    resultado: Literal["SUCCESS", "FAILURE", "DENIED"] | None = None,
+    fecha_desde: datetime | None = None,
+    fecha_hasta: datetime | None = None,
+    texto: Annotated[str | None, Query(max_length=120)] = None,
     db: Session = Depends(get_identity_db),
 ) -> list[AccessAuditResponse]:
+    if (
+        fecha_desde is not None
+        and fecha_hasta is not None
+        and _as_utc(fecha_desde) > _as_utc(fecha_hasta)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="fecha_desde debe ser anterior o igual a fecha_hasta",
+        )
     rows = list_access_audit(
         db,
         id_usuario=_current_user_id(current_user),
         limit=limit,
         offset=offset,
+        id_usuario_filtro=id_usuario,
+        microservicio=microservicio,
+        modulo=modulo,
+        accion=accion,
+        resultado=resultado,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        texto=texto,
     )
     return [AccessAuditResponse.model_validate(row) for row in rows]
 
@@ -175,7 +209,7 @@ def read_user(
 )
 def add_user(
     data: UserCreate,
-    current_user: dict[str, Any] = Depends(get_current_user),
+    request: Request,
     db: Session = Depends(get_identity_db),
 ) -> IdentityUserResponse:
     employee = get_employee(db, data.id_empleado)
@@ -190,12 +224,6 @@ def add_user(
             nombre_usuario=data.nombre_usuario,
             password_hash=hash_password(data.password),
         )
-        record_access(
-            db,
-            id_usuario=_current_user_id(current_user),
-            accion="usuario_creado",
-            objeto_consultado=f"usuarios/{row['id_usuario']}",
-        )
         _commit_or_conflict(db)
     except IntegrityError:
         db.rollback()
@@ -203,6 +231,12 @@ def add_user(
             status_code=409,
             detail="El empleado ya tiene un usuario o el nombre de usuario existe",
         ) from None
+    set_audit_details(
+        request,
+        object_type="identidad.usuarios",
+        object_id=row["id_usuario"],
+        after=row,
+    )
     return IdentityUserResponse.model_validate(row)
 
 
@@ -210,9 +244,10 @@ def add_user(
 def edit_user(
     id_usuario: Annotated[int, Path(gt=0)],
     data: UserUpdate,
-    current_user: dict[str, Any] = Depends(get_current_user),
+    request: Request,
     db: Session = Depends(get_identity_db),
 ) -> IdentityUserResponse:
+    before = get_user(db, id_usuario)
     values = data.model_dump(exclude_unset=True)
     if any(value is None for value in values.values()):
         raise HTTPException(status_code=422, detail="Los campos no aceptan null")
@@ -221,37 +256,39 @@ def edit_user(
         if row is None:
             db.rollback()
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        if values:
-            record_access(
-                db,
-                id_usuario=_current_user_id(current_user),
-                accion="usuario_actualizado",
-                objeto_consultado=f"usuarios/{id_usuario}",
-            )
         _commit_or_conflict(db)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="El nombre de usuario ya existe") from None
+    set_audit_details(
+        request,
+        object_type="identidad.usuarios",
+        object_id=id_usuario,
+        before=before,
+        after=row,
+    )
     return IdentityUserResponse.model_validate(row)
 
 
 @accounts_router.delete("/{id_usuario}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user(
     id_usuario: Annotated[int, Path(gt=0)],
-    current_user: dict[str, Any] = Depends(get_current_user),
+    request: Request,
     db: Session = Depends(get_identity_db),
 ) -> None:
+    before = get_user(db, id_usuario)
     row = update_user(db, id_usuario, {"estado": "inactivo"})
     if row is None:
         db.rollback()
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    record_access(
-        db,
-        id_usuario=_current_user_id(current_user),
-        accion="usuario_inactivado",
-        objeto_consultado=f"usuarios/{id_usuario}",
-    )
     _commit_or_conflict(db)
+    set_audit_details(
+        request,
+        object_type="identidad.usuarios",
+        object_id=id_usuario,
+        before=before,
+        after=row,
+    )
 
 
 __all__ = ["accounts_router", "router"]

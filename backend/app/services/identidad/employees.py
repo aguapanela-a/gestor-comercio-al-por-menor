@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import IntegrityError
@@ -12,7 +12,6 @@ from app.services.identidad.repositories import (
     create_employee,
     get_employee,
     list_employees,
-    record_access,
     update_employee,
 )
 from app.services.identidad.schemas import (
@@ -21,22 +20,13 @@ from app.services.identidad.schemas import (
     EmployeeUpdate,
     IdentityState,
 )
+from app.shared.audit import set_audit_details
 
 router = APIRouter(
     prefix="/employees",
     tags=["Empleados"],
     dependencies=[Depends(get_current_user)],
 )
-
-
-def _actor_id(current_user: dict[str, Any]) -> int:
-    subject = current_user.get("sub", "")
-    if not isinstance(subject, str) or not subject.isdecimal() or int(subject) < 1:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales de autenticación no válidas",
-        )
-    return int(subject)
 
 
 def _commit_or_conflict(db: Session) -> None:
@@ -113,18 +103,11 @@ def read_employee(
 def add_employee(
     data: EmployeeCreate,
     request: Request,
-    current_user: dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_identity_db),
 ) -> EmployeeResponse:
     _validate_site_reference(request, data.id_sede)
     try:
         row = create_employee(db, data.model_dump())
-        record_access(
-            db,
-            id_usuario=_actor_id(current_user),
-            accion="empleado_creado",
-            objeto_consultado=f"empleados/{row['id_empleado']}",
-        )
         _commit_or_conflict(db)
     except IntegrityError:
         db.rollback()
@@ -132,6 +115,12 @@ def add_employee(
             status_code=status.HTTP_409_CONFLICT,
             detail="El documento del empleado ya existe o hay una referencia inválida",
         ) from None
+    set_audit_details(
+        request,
+        object_type="identidad.empleados",
+        object_id=row["id_empleado"],
+        after=row,
+    )
     return EmployeeResponse.model_validate(row)
 
 
@@ -140,9 +129,9 @@ def edit_employee(
     id_empleado: Annotated[int, Path(gt=0)],
     data: EmployeeUpdate,
     request: Request,
-    current_user: dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_identity_db),
 ) -> EmployeeResponse:
+    before = get_employee(db, id_empleado)
     values = data.model_dump(exclude_unset=True)
     if any(value is None and key != "correo" for key, value in values.items()):
         raise HTTPException(status_code=422, detail="Los campos requeridos no aceptan null")
@@ -153,13 +142,6 @@ def edit_employee(
         if row is None:
             db.rollback()
             raise HTTPException(status_code=404, detail="Empleado no encontrado")
-        if values:
-            record_access(
-                db,
-                id_usuario=_actor_id(current_user),
-                accion="empleado_actualizado",
-                objeto_consultado=f"empleados/{id_empleado}",
-            )
         _commit_or_conflict(db)
     except IntegrityError:
         db.rollback()
@@ -167,26 +149,28 @@ def edit_employee(
             status_code=status.HTTP_409_CONFLICT,
             detail="La actualización entra en conflicto con datos existentes",
         ) from None
+    set_audit_details(
+        request,
+        object_type="identidad.empleados",
+        object_id=id_empleado,
+        before=before,
+        after=row,
+    )
     return EmployeeResponse.model_validate(row)
 
 
 @router.delete("/{id_empleado}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_employee(
     id_empleado: Annotated[int, Path(gt=0)],
-    current_user: dict[str, Any] = Depends(get_current_user),
+    request: Request,
     db: Session = Depends(get_identity_db),
 ) -> None:
+    before = get_employee(db, id_empleado)
     try:
         row = update_employee(db, id_empleado, {"estado": "inactivo"})
         if row is None:
             db.rollback()
             raise HTTPException(status_code=404, detail="Empleado no encontrado")
-        record_access(
-            db,
-            id_usuario=_actor_id(current_user),
-            accion="empleado_inactivado",
-            objeto_consultado=f"empleados/{id_empleado}",
-        )
         _commit_or_conflict(db)
     except IntegrityError:
         db.rollback()
@@ -194,6 +178,13 @@ def deactivate_employee(
             status_code=409,
             detail="No fue posible inactivar el empleado",
         ) from None
+    set_audit_details(
+        request,
+        object_type="identidad.empleados",
+        object_id=id_empleado,
+        before=before,
+        after=row,
+    )
 
 
 __all__ = ["router"]

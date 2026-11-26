@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.services.ventas.schemas import (
     PaymentResponse,
 )
 from app.shared.transactions import set_local_transaction_timeouts
+from app.shared.audit import set_audit_details
 
 router = APIRouter(prefix="/orders", tags=["Pagos"])
 
@@ -31,6 +32,7 @@ router = APIRouter(prefix="/orders", tags=["Pagos"])
 def add_order_payment(
     id_pedido: Annotated[int, Path(gt=0)],
     data: PaymentCreate,
+    request: Request,
     db: Session = Depends(get_ventas_db),
 ) -> PaymentResponse:
     try:
@@ -43,6 +45,10 @@ def add_order_payment(
             db.rollback()
             raise HTTPException(status_code=409, detail="El pedido no admite pagos")
         balance = order_balance(db, id_pedido, order["total_registrado"])
+        before = {
+            "estado_pedido": order["estado"],
+            "saldo_pendiente": balance,
+        }
         if data.valor > balance:
             db.rollback()
             raise HTTPException(status_code=409, detail="El pago supera el saldo pendiente")
@@ -58,6 +64,20 @@ def add_order_payment(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="No fue posible registrar el pago") from None
+    set_audit_details(
+        request,
+        object_type="ventas.pagos",
+        object_id=row["id_pago"],
+        before=before,
+        after={
+            "id_pago": row["id_pago"],
+            "id_pedido": id_pedido,
+            "estado_pedido": "completado" if data.valor == before["saldo_pendiente"] else order["estado"],
+            "saldo_pendiente": max(before["saldo_pendiente"] - data.valor, 0),
+            "valor": row["valor"],
+            "medio_pago": row["medio_pago"],
+        },
+    )
     return PaymentResponse.model_validate(row)
 
 

@@ -14,7 +14,7 @@ import { ReportsPage } from '../features/reports/ReportsPage'
 function PrivateRoutes() {
   const { token, ready } = useAuth()
   if (!ready) {
-    return <div className="app-loading"><LoaderCircle size={24} className="spin" /><span>Verificando sesiÃ³nâ€¦</span></div>
+    return <div className="app-loading"><LoaderCircle size={24} className="spin" /><span>Verificando sesión…</span></div>
   }
   if (!token) return <Navigate to="/login" replace />
   return <PrivateLayout />

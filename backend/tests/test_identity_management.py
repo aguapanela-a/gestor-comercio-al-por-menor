@@ -79,12 +79,36 @@ def audit_database(
         )
     """)
     connection.exec_driver_sql("""
+        CREATE TABLE identidad.usuarios (
+            id_usuario INTEGER PRIMARY KEY,
+            id_empleado INTEGER,
+            nombre_usuario TEXT
+        )
+    """)
+    connection.exec_driver_sql("""
+        CREATE TABLE identidad.empleados (
+            id_empleado INTEGER PRIMARY KEY,
+            nombre_completo TEXT
+        )
+    """)
+    connection.exec_driver_sql("""
         CREATE TABLE identidad.auditoria_accesos (
             id_auditoria INTEGER PRIMARY KEY,
-            id_usuario INTEGER NOT NULL,
+            id_usuario INTEGER,
             fecha_hora TEXT NOT NULL,
-            accion VARCHAR(30) NOT NULL,
-            objeto_consultado VARCHAR(120) NOT NULL
+            accion VARCHAR(120) NOT NULL,
+            objeto_consultado VARCHAR(255) NOT NULL,
+            event_id TEXT,
+            microservicio TEXT NOT NULL DEFAULT 'identidad',
+            modulo TEXT NOT NULL DEFAULT 'identidad',
+            tipo_objeto TEXT,
+            id_objeto TEXT,
+            resultado TEXT NOT NULL DEFAULT 'SUCCESS',
+            metodo_http TEXT,
+            ruta TEXT,
+            direccion_ip TEXT,
+            correlation_id TEXT,
+            detalles TEXT NOT NULL DEFAULT '{}'
         )
     """)
     connection.execute(
@@ -100,14 +124,35 @@ def audit_database(
             [{"id_usuario": user_id, "id_rol": role_id} for user_id, role_id in assignments],
         )
     if rows:
+        audit_rows = [
+            {
+                **row,
+                "event_id": row.get("event_id"),
+                "microservicio": row.get("microservicio", "identidad"),
+                "modulo": row.get("modulo", "identidad"),
+                "tipo_objeto": row.get("tipo_objeto"),
+                "id_objeto": row.get("id_objeto"),
+                "resultado": row.get("resultado", "SUCCESS"),
+                "metodo_http": row.get("metodo_http"),
+                "ruta": row.get("ruta"),
+                "direccion_ip": row.get("direccion_ip"),
+                "correlation_id": row.get("correlation_id"),
+                "detalles": row.get("detalles", "{}"),
+            }
+            for row in rows
+        ]
         connection.execute(
             text("""
                 INSERT INTO identidad.auditoria_accesos
-                    (id_auditoria, id_usuario, fecha_hora, accion, objeto_consultado)
+                    (id_auditoria, id_usuario, fecha_hora, accion, objeto_consultado,
+                     event_id, microservicio, modulo, tipo_objeto, id_objeto,
+                     resultado, metodo_http, ruta, direccion_ip, correlation_id, detalles)
                 VALUES
-                    (:id_auditoria, :id_usuario, :fecha_hora, :accion, :objeto_consultado)
+                    (:id_auditoria, :id_usuario, :fecha_hora, :accion, :objeto_consultado,
+                     :event_id, :microservicio, :modulo, :tipo_objeto, :id_objeto,
+                     :resultado, :metodo_http, :ruta, :direccion_ip, :correlation_id, :detalles)
             """),
-            rows,
+            audit_rows,
         )
     connection.commit()
     db = Session(bind=connection)
@@ -125,7 +170,7 @@ def auth_token(monkeypatch: pytest.MonkeyPatch) -> str:
     return create_access_token({"sub": "5"})
 
 
-def test_employee_create_is_parameterized_and_audited(
+def test_employee_create_is_parameterized_and_commits_for_database_audit(
     monkeypatch: pytest.MonkeyPatch,
     auth_token: str,
 ) -> None:
@@ -162,7 +207,8 @@ def test_employee_create_is_parameterized_and_audited(
     assert response.json() == employee
     assert db.commits == 1
     assert db.statements[0][1]["num_documento"] == "DOC-22"
-    assert "empleado_creado" in db.statements[1][1]["accion"]
+    assert len(db.statements) == 1
+    assert "INSERT INTO identidad.empleados" in db.statements[0][0]
 
 
 def test_user_creation_hashes_password_and_never_returns_hash(
@@ -299,6 +345,19 @@ def test_audit_roles_read_all_records_in_stable_pages(
         "fecha_hora",
         "accion",
         "objeto_consultado",
+        "event_id",
+        "microservicio",
+        "modulo",
+        "tipo_objeto",
+        "id_objeto",
+        "resultado",
+        "metodo_http",
+        "ruta",
+        "direccion_ip",
+        "correlation_id",
+        "detalles",
+        "nombre_usuario",
+        "nombre_completo",
     }
 
 
@@ -336,6 +395,64 @@ def test_normal_user_cannot_expand_audit_scope_with_claim_or_query_parameters(
 
     assert response.status_code == 200
     assert [row["id_auditoria"] for row in response.json()] == [201]
+
+
+def test_auditor_can_combine_filters_without_changing_stable_pagination(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
+) -> None:
+    rows = [
+        {
+            "id_auditoria": 301,
+            "id_usuario": 6,
+            "fecha_hora": "2026-11-25T10:00:00",
+            "accion": "POST /orders",
+            "objeto_consultado": "ventas.pedidos",
+            "microservicio": "ventas",
+            "modulo": "orders",
+            "resultado": "SUCCESS",
+            "ruta": "/orders",
+        },
+        {
+            "id_auditoria": 302,
+            "id_usuario": 7,
+            "fecha_hora": "2026-11-25T11:00:00",
+            "accion": "POST /products",
+            "objeto_consultado": "catalogo.productos",
+            "microservicio": "catalogo",
+            "modulo": "products",
+            "resultado": "DENIED",
+            "ruta": "/products",
+        },
+    ]
+    with audit_database(rows, [(5, 1)]) as db:
+        monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+        with TestClient(app) as client:
+            response = client.get(
+                "/auth/audit?microservicio=ventas&modulo=orders&accion=post"
+                "&resultado=SUCCESS&texto=pedidos",
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+
+    assert response.status_code == 200
+    assert [row["id_auditoria"] for row in response.json()] == [301]
+    assert response.json()[0]["fecha_hora"].endswith("Z")
+
+
+def test_audit_endpoint_rejects_an_inverted_date_range(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
+) -> None:
+    with audit_database([], []) as db:
+        monkeypatch.setitem(app.dependency_overrides, get_identity_db, lambda: db)
+        with TestClient(app) as client:
+            response = client.get(
+                "/auth/audit?fecha_desde=2026-11-25T12:00:00Z"
+                "&fecha_hasta=2026-11-25T10:00:00Z",
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+
+    assert response.status_code == 422
 
 
 def test_audit_endpoint_rejects_unauthenticated_requests(

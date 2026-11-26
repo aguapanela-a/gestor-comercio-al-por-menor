@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import SERVICE_DATABASE_SETTINGS
 from app.core.health import check_database_connection
+from app.shared.audit import AuditRequestMiddleware
 
 
 def create_service_app(service: str, title: str) -> FastAPI:
@@ -11,6 +12,7 @@ def create_service_app(service: str, title: str) -> FastAPI:
         raise ValueError(f"Servicio sin base de datos configurada: {service}")
 
     app = FastAPI(title=title, version="1.0.0")
+    app.add_middleware(AuditRequestMiddleware, service=service)
 
     allowed_origins = [
         origin.strip()
@@ -23,7 +25,8 @@ def create_service_app(service: str, title: str) -> FastAPI:
             allow_origins=allowed_origins,
             allow_credentials=True,
             allow_methods=['*'],
-            allow_headers=['*'],
+            allow_headers=["*"],
+            expose_headers=["X-Audit-Status", "X-Audit-Error", "X-Correlation-ID"],
         )
 
     @app.get("/health")

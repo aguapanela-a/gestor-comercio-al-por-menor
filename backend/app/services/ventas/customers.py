@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.services.ventas.repositories import (
     update_customer,
 )
 from app.services.ventas.schemas import CustomerCreate, CustomerResponse, CustomerUpdate, SalesState
+from app.shared.audit import set_audit_details
 
 router = APIRouter(prefix="/customers", tags=["Clientes"])
 
@@ -61,6 +62,7 @@ def read_customer(
 @router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 def add_customer(
     data: CustomerCreate,
+    request: Request,
     db: Session = Depends(get_ventas_db),
 ) -> CustomerResponse:
     try:
@@ -69,6 +71,12 @@ def add_customer(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="El número de documento ya existe") from None
+    set_audit_details(
+        request,
+        object_type="ventas.clientes",
+        object_id=row["id_cliente"],
+        after=row,
+    )
     return CustomerResponse.model_validate(row)
 
 
@@ -76,8 +84,10 @@ def add_customer(
 def edit_customer(
     id_cliente: Annotated[int, Path(gt=0)],
     data: CustomerUpdate,
+    request: Request,
     db: Session = Depends(get_ventas_db),
 ) -> CustomerResponse:
+    before = get_customer(db, id_cliente)
     values = data.model_dump(exclude_unset=True)
     try:
         row = update_customer(db, id_cliente, values)
@@ -88,16 +98,32 @@ def edit_customer(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="El número de documento ya existe") from None
+    set_audit_details(
+        request,
+        object_type="ventas.clientes",
+        object_id=id_cliente,
+        before=before,
+        after=row,
+    )
     return CustomerResponse.model_validate(row)
 
 
 @router.delete("/{id_cliente}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_customer(
     id_cliente: Annotated[int, Path(gt=0)],
+    request: Request,
     db: Session = Depends(get_ventas_db),
 ) -> None:
+    before = get_customer(db, id_cliente)
     row = update_customer(db, id_cliente, {"estado": "inactivo"})
     if row is None:
         db.rollback()
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     _commit_or_conflict(db)
+    set_audit_details(
+        request,
+        object_type="ventas.clientes",
+        object_id=id_cliente,
+        before=before,
+        after=row,
+    )
