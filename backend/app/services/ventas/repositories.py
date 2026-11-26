@@ -1,4 +1,5 @@
-from datetime import date
+﻿from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -208,10 +209,7 @@ def create_order(
     products: list[dict[str, Any]],
 ) -> dict[str, Any]:
     table = ORDER_FRAGMENT_BY_SITE[id_sede]
-    total = sum(
-        product["cantidad"] * product["precio_unitario"]
-        for product in products
-    )
+    total = sum((Decimal(str(product["cantidad"])) * Decimal(str(product["precio_unitario"])) for product in products), Decimal("0"))
     order = db.execute(
         text(f"""
             INSERT INTO {table}
@@ -235,10 +233,10 @@ def create_order(
         db.execute(
             text("""
                 INSERT INTO ventas.detalle_pedido
-                    (id_pedido, id_producto, cantidad, precio_unitario)
-                VALUES (:id_pedido, :id_producto, :cantidad, :precio_unitario)
+                    (id_pedido, id_sede, id_producto, cantidad, precio_unitario)
+                VALUES (:id_pedido, :id_sede, :id_producto, :cantidad, :precio_unitario)
             """),
-            {"id_pedido": order["id_pedido"], **product},
+            {"id_pedido": order["id_pedido"], "id_sede": order["id_sede"], **product},
         )
     return dict(order)
 
@@ -346,7 +344,7 @@ def create_return(
             + returned_by_product.get(id_producto, 0)
             > sold_by_product[id_producto]
         ):
-            raise ValueError("La cantidad solicitada supera la cantidad vendida pendiente de devolución")
+            raise ValueError("La cantidad solicitada supera la cantidad vendida pendiente de devoluciÃ³n")
 
     return_row = db.execute(
         text("""
@@ -420,7 +418,7 @@ def resolve_return(
     if row["estado"] != "pendiente":
         raise ValueError("Solo se pueden resolver devoluciones pendientes")
     if approve and order["estado"] not in ("completado", "devolucion"):
-        raise ValueError("El pedido no admite la aprobación de devoluciones")
+        raise ValueError("El pedido no admite la aprobaciÃ³n de devoluciones")
     state = "aprobada" if approve else "rechazada"
     resolved = db.execute(
         text("""
@@ -455,4 +453,7 @@ def list_return_details(db: Session, id_devolucion: int) -> list[dict[str, Any]]
         {"id_devolucion": id_devolucion},
     ).mappings().all()
     return [dict(row) for row in rows]
+
+
+
 
