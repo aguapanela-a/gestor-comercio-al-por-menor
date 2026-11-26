@@ -4,6 +4,7 @@ from typing import Any, TypeVar
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg import Connection
 
+from app.core.security import get_current_user
 from app.services.reportes.aplicacion.puertos_entrada import InPortViews
 from app.services.reportes.infraestructura.adaptadores_entrada.dependencies import (
     get_use_case_views,
@@ -31,7 +32,10 @@ T = TypeVar("T")
 
 class GetViewInAdapter:
     def __init__(self) -> None:
-        self.router = APIRouter(tags=["Reportes"])
+        self.router = APIRouter(
+            tags=["Reportes"],
+            dependencies=[Depends(get_current_user)],
+        )
         self.router.add_api_route(
             "/vistas",
             self.get_vistas,

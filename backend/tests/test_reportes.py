@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg.sql import Composed
 
+from app.core.config import settings
+from app.core.security import create_access_token
 from app.services.reportes.aplicacion.useCases import UseCaseViews
 from app.services.reportes.infraestructura.adaptadores_entrada.dependencies import (
     get_use_case_views,
@@ -29,8 +31,21 @@ from app.services.reportes.infraestructura.configuracion import get_connection
 from app.services.reportes.main import app
 
 
+@pytest.fixture
+def auth_token(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setattr(settings, "jwt_secret_key", "reports-test-signing-key")
+    return create_access_token({"sub": "1"})
+
+
 def test_reportes_health(assert_health_endpoints) -> None:
     assert_health_endpoints(app, "reportes")
+
+
+def test_report_views_require_authentication() -> None:
+    with TestClient(app) as client:
+        response = client.get("/vistas")
+
+    assert response.status_code == 401
 
 
 def test_database_health_reports_unavailable_without_connecting(
@@ -220,6 +235,7 @@ def test_report_view_endpoints_return_mapped_rows(
     entity_name: str,
     row: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
 ) -> None:
     out_port = MagicMock()
     out_port.getView.return_value = [row]
@@ -230,7 +246,10 @@ def test_report_view_endpoints_return_mapped_rows(
     )
 
     with TestClient(app) as client:
-        response = client.get(path)
+        response = client.get(
+            path,
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
 
     assert response.status_code == 200
     assert response.json() == [row]
@@ -303,6 +322,7 @@ def _report_connection() -> tuple[MagicMock, MagicMock]:
 
 def test_report_catalog_returns_every_authorized_view_and_refreshes(
     monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
 ) -> None:
     connection, cursor = _report_connection()
     initial_views = [_report_catalog_row(f"vista_reporte_{index}") for index in range(15)]
@@ -311,8 +331,9 @@ def test_report_catalog_returns_every_authorized_view_and_refreshes(
     monkeypatch.setitem(app.dependency_overrides, get_connection, lambda: connection)
 
     with TestClient(app) as client:
-        first_response = client.get("/vistas")
-        second_response = client.get("/vistas")
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        first_response = client.get("/vistas", headers=headers)
+        second_response = client.get("/vistas", headers=headers)
 
     assert first_response.status_code == 200
     assert len(first_response.json()) == 15
@@ -338,6 +359,7 @@ def test_report_catalog_returns_every_authorized_view_and_refreshes(
 
 def test_dynamic_report_endpoint_queries_authorized_view_safely(
     monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
 ) -> None:
     connection, cursor = _report_connection()
     cursor.fetchone.return_value = {"name": "vista_nueva"}
@@ -346,7 +368,10 @@ def test_dynamic_report_endpoint_queries_authorized_view_safely(
     monkeypatch.setitem(app.dependency_overrides, get_connection, lambda: connection)
 
     with TestClient(app) as client:
-        response = client.get("/vistas/vista_nueva")
+        response = client.get(
+            "/vistas/vista_nueva",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
 
     assert response.status_code == 200
     assert response.json() == [{"total": 123.45}]
@@ -368,13 +393,17 @@ def test_dynamic_report_endpoint_queries_authorized_view_safely(
 def test_dynamic_report_endpoint_rejects_unknown_schemas_and_injection(
     view_name: str,
     monkeypatch: pytest.MonkeyPatch,
+    auth_token: str,
 ) -> None:
     connection, cursor = _report_connection()
     cursor.fetchone.return_value = None
     monkeypatch.setitem(app.dependency_overrides, get_connection, lambda: connection)
 
     with TestClient(app) as client:
-        response = client.get(f"/vistas/{quote(view_name, safe='')}")
+        response = client.get(
+            f"/vistas/{quote(view_name, safe='')}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
 
     assert response.status_code == 404
     assert cursor.execute.call_count == 1

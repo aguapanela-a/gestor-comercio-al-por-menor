@@ -16,7 +16,8 @@ $apiServices = @(
     [pscustomobject]@{ Name = 'Organización'; Module = 'app.services.organizacion.main:app'; Port = 8003 },
     [pscustomobject]@{ Name = 'Compras'; Module = 'app.services.compras.main:app'; Port = 8004 },
     [pscustomobject]@{ Name = 'Inventarios'; Module = 'app.services.inventarios.main:app'; Port = 8005 },
-    [pscustomobject]@{ Name = 'Ventas'; Module = 'app.services.ventas.main:app'; Port = 8006 }
+    [pscustomobject]@{ Name = 'Ventas'; Module = 'app.services.ventas.main:app'; Port = 8006 },
+    [pscustomobject]@{ Name = 'Reportes'; Module = 'app.services.reportes.main:app'; Port = 8007 }
 )
 $frontendService = [pscustomobject]@{ Name = 'Frontend'; Port = 5173 }
 
